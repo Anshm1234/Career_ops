@@ -1,3 +1,5 @@
+#Yet to update the Readme as the project is under development
+
 # career-ops — Layer 1: Job Discovery Agent
 
 An autonomous agent powered by **Gemini** (free tier) that scrapes job listings
