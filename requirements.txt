@@ -1,0 +1,25 @@
+# ── Core ──────────────────────────────────────────────────────────────────────
+google-generativeai==0.7.2        # Gemini free tier LLM
+python-dotenv==1.0.1              # loads .env into os.environ
+
+# ── Web API ────────────────────────────────────────────────────────────────────
+fastapi==0.111.0                  # web framework
+uvicorn==0.30.1                   # ASGI server (run with: uvicorn api:app --reload)
+python-multipart==0.0.9           # required by FastAPI for file uploads
+
+# ── Resume parsing ─────────────────────────────────────────────────────────────
+pdfplumber==0.11.0                # PDF text extraction
+python-docx==1.1.2                # DOCX text extraction
+json-repair==0.30.0               # fixes malformed JSON from Gemini
+
+# ── HTTP + scraping ────────────────────────────────────────────────────────────
+requests==2.32.3                  # HTTP calls for JSON APIs (Greenhouse, Lever, Ashby)
+beautifulsoup4==4.12.3            # HTML parsing for Workday
+lxml==5.2.2                       # faster HTML parser backend for BeautifulSoup
+playwright==1.44.0                # browser automation for JS-heavy Workday pages
+
+# ── Data ──────────────────────────────────────────────────────────────────────
+tqdm==4.66.4                      # progress bars in terminal
+
+# ── Dev utilities ─────────────────────────────────────────────────────────────
+colorama==0.4.6                   # coloured terminal output (works on Windows too)
