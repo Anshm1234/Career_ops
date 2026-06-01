@@ -1,14 +1,20 @@
 """
 tools/ashby.py — scrapes Ashby HQ ATS via their public GraphQL API.
+
+Ashby removed jobUrl and descriptionHtml from the board API.
+We now:
+  1. Fetch job list (id, title, location) via ApiJobBoardWithTeams
+  2. Fetch description per job via ApiJobPosting (first 30 jobs only)
 """
 import requests
 import re
 import time
 from config import REQUEST_TIMEOUT, RETRY_ATTEMPTS, DELAY_BETWEEN_REQS
 
-ASHBY_GRAPHQL_URL = "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams"
+ASHBY_BOARD_URL = "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams"
+ASHBY_JOB_URL   = "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobPosting"
 
-QUERY = """
+BOARD_QUERY = """
 query ApiJobBoardWithTeams($organizationHostedJobsPageName: String!) {
     jobBoard: jobBoardWithTeams(
         organizationHostedJobsPageName: $organizationHostedJobsPageName
@@ -17,13 +23,46 @@ query ApiJobBoardWithTeams($organizationHostedJobsPageName: String!) {
             id
             title
             locationName
-            jobUrl
-            descriptionHtml
-            publishedDate
+            employmentType
         }
     }
 }
 """
+
+JOB_QUERY = """
+query ApiJobPosting($jobPostingId: String!) {
+    jobPosting(id: $jobPostingId) {
+        descriptionHtml
+    }
+}
+"""
+
+HEADERS = {
+    "Content-Type": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json",
+}
+
+
+def _fetch_description(job_id: str) -> str:
+    """Fetch description for a single job. Returns empty string on failure."""
+    try:
+        resp = requests.post(
+            ASHBY_JOB_URL,
+            json={
+                "operationName": "ApiJobPosting",
+                "variables": {"jobPostingId": job_id},
+                "query": JOB_QUERY,
+            },
+            headers=HEADERS,
+            timeout=REQUEST_TIMEOUT,
+        )
+        if resp.ok:
+            html = resp.json().get("data", {}).get("jobPosting", {}).get("descriptionHtml", "")
+            return _strip_html(html)
+    except Exception:
+        pass
+    return ""
 
 
 def scrape_ashby(company_slug: str) -> dict:
@@ -31,24 +70,20 @@ def scrape_ashby(company_slug: str) -> dict:
     Fetch all open jobs from an Ashby-powered company.
 
     Args:
-        company_slug: e.g. 'linear', 'loom', 'retool'
+        company_slug: e.g. 'linear', 'cursor', 'perplexity'
     """
     payload = {
         "operationName": "ApiJobBoardWithTeams",
         "variables": {"organizationHostedJobsPageName": company_slug},
-        "query": QUERY,
-    }
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (compatible; career-ops-bot/1.0)",
+        "query": BOARD_QUERY,
     }
 
     for attempt in range(1, RETRY_ATTEMPTS + 1):
         try:
             resp = requests.post(
-                ASHBY_GRAPHQL_URL,
+                ASHBY_BOARD_URL,
                 json=payload,
-                headers=headers,
+                headers=HEADERS,
                 timeout=REQUEST_TIMEOUT,
             )
             resp.raise_for_status()
@@ -61,20 +96,30 @@ def scrape_ashby(company_slug: str) -> dict:
             postings = (
                 data.get("data", {})
                     .get("jobBoard", {})
-                    .get("jobPostings", [])
+                    .get("jobPostings", []) or []
             )
 
             jobs = []
-            for post in postings:
+            for i, post in enumerate(postings):
+                job_id = post.get("id", "")
+                if not job_id:
+                    continue
+
+                # Fetch description for first 30 jobs to limit API calls
+                desc = ""
+                if i < 30:
+                    desc = _fetch_description(job_id)
+                    time.sleep(0.1)
+
                 jobs.append({
-                    "id":          post.get("id", ""),
+                    "id":          job_id,
                     "title":       post.get("title", "").strip(),
                     "company":     company_slug,
-                    "url":         post.get("jobUrl", ""),
+                    "url":         f"https://jobs.ashbyhq.com/{company_slug}/{job_id}",
                     "location":    post.get("locationName", "Not specified"),
-                    "description": _strip_html(post.get("descriptionHtml", "")),
+                    "description": desc,
                     "source":      "ashby",
-                    "posted_at":   post.get("publishedDate", ""),
+                    "posted_at":   post.get("employmentType", ""),
                 })
 
             time.sleep(DELAY_BETWEEN_REQS)
@@ -82,7 +127,7 @@ def scrape_ashby(company_slug: str) -> dict:
 
         except requests.exceptions.HTTPError as e:
             status = e.response.status_code if e.response else "?"
-            error = f"HTTP {status} — slug '{company_slug}' may be wrong"
+            error = f"HTTP {status} — slug '{company_slug}' may be wrong or company left Ashby"
             if attempt == RETRY_ATTEMPTS:
                 return {"success": False, "jobs": [], "count": 0, "error": error}
 

@@ -1,0 +1,120 @@
+{
+  "name": "Ansh Madaan",
+  "email": "amadaan be23@thapar.edu",
+  "phone": "+91 9463003755",
+  "location": null,
+  "skills": [
+    "Python",
+    "C/C++",
+    "R",
+    "SQL",
+    "Git",
+    "VS Code",
+    "Visual Studio",
+    "PyTorch",
+    "TensorFlow",
+    "scikit-learn",
+    "NumPy",
+    "Pandas",
+    "Matplotlib",
+    "Data Structures & Algorithms",
+    "OOP",
+    "Problem Solving",
+    "Deep Learning",
+    "CNN",
+    "LSTM",
+    "Attention Models",
+    "EEG Analysis",
+    "Signal Processing",
+    "Grad-CAM",
+    "Integrated Gradients",
+    "Face Recognition",
+    "OpenCV",
+    "Conversational AI",
+    "Generative AI",
+    "Natural Language Processing",
+    "Shell Scripting"
+  ],
+  "experience_years": {
+    "Python": 1,
+    "Deep Learning": 1,
+    "TensorFlow": 1,
+    "PyTorch": 1,
+    "OpenCV": 1,
+    "Generative AI": 1,
+    "Git": 1,
+    "Machine Learning": 1,
+    "Natural Language Processing": 1
+  },
+  "education": "B.Tech at Thapar Institute of Engineering and Technology (2023 – Present); Class XII at Govt. Boys Senior Secondary School (2023)",
+  "certifications": [],
+  "projects": [
+    {
+      "name": "EEG-based Schizophrenia Detection using Deep Learning",
+      "description": "Developed a hybrid CNN–LSTM with attention model achieving 97% accuracy for EEG-based schizophrenia detection. Utilized bandpass filtering and temporal windowing for robust feature extraction and improved interpretability with Grad-CAM, Integrated Gradients, and attention weight visualization.",
+      "technologies": [
+        "CNN",
+        "LSTM",
+        "Deep Learning",
+        "PyTorch",
+        "TensorFlow",
+        "Signal Processing",
+        "Grad-CAM",
+        "Integrated Gradients"
+      ]
+    },
+    {
+      "name": "Face Recognition-Based Chatbot Authentication System",
+      "description": "Built a secure chatbot access system using real-time face recognition with OpenCV, integrating facial authentication with conversational AI for personalized interaction and ensuring high-accuracy face matching.",
+      "technologies": [
+        "OpenCV",
+        "Face Recognition",
+        "Conversational AI",
+        "Python",
+        "Deep Learning"
+      ]
+    },
+    {
+      "name": "Voice Assisted Terminal",
+      "description": "Engineered a voice-controlled terminal for executing complex shell operations via natural language. Integrated Google’s generative AI models for intelligent command understanding and published it as a PyPI package.",
+      "technologies": [
+        "Generative AI",
+        "Natural Language Processing",
+        "Python",
+        "PyPI",
+        "Shell Scripting"
+      ]
+    }
+  ],
+  "preferred_roles": [
+    "Machine Learning Engineer",
+    "Deep Learning Engineer",
+    "AI Engineer",
+    "Computer Vision Engineer",
+    "Backend Developer"
+  ],
+  "salary_min": 800000,
+  "salary_max": 4000000,
+  "location_preferences": [
+    "remote",
+    "banglore",
+    "delhi",
+    "gurgaon",
+    "us"
+  ],
+  "total_experience_years": 1,
+  "search_keywords": [
+    "Python",
+    "Deep Learning",
+    "Machine Learning",
+    "AI",
+    "Computer Vision",
+    "Natural Language Processing",
+    "TensorFlow",
+    "PyTorch",
+    "Generative AI",
+    "Backend Engineer",
+    "Algorithms",
+    "Data Science"
+  ]
+}

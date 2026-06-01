@@ -1,0 +1,96 @@
+{
+  "name": "Ansh Madaan",
+  "email": "amadaan_be23@thapar.edu",
+  "phone": "+91 9463003755",
+  "location": null,
+  "skills": [
+    "Python",
+    "C/C++",
+    "R",
+    "SQL",
+    "Git",
+    "VS Code",
+    "Visual Studio",
+    "PyTorch",
+    "TensorFlow",
+    "scikit-learn",
+    "NumPy",
+    "Pandas",
+    "Matplotlib",
+    "Data Structures & Algorithms",
+    "OOP",
+    "Deep Learning",
+    "OpenCV",
+    "Generative AI",
+    "CNN",
+    "LSTM",
+    "Grad-CAM"
+  ],
+  "experience_years": {
+    "Python": 2,
+    "Deep Learning": 1,
+    "PyTorch": 1,
+    "OpenCV": 1
+  },
+  "education": "B.Tech, Thapar Institute of Engineering and Technology (2023 - Present)",
+  "certifications": [],
+  "projects": [
+    {
+      "name": "EEG-based Schizophrenia Detection using Deep Learning",
+      "description": "Developed a hybrid CNN-LSTM with attention model achieving 97% accuracy for EEG feature extraction, utilizing Grad-CAM and Integrated Gradients for model interpretability.",
+      "technologies": [
+        "PyTorch",
+        "Python",
+        "Deep Learning",
+        "CNN",
+        "LSTM",
+        "Grad-CAM"
+      ]
+    },
+    {
+      "name": "Face Recognition-Based Chatbot Authentication System",
+      "description": "Built a secure conversational chatbot system authenticated using real-time facial recognition and encoding with OpenCV.",
+      "technologies": [
+        "Python",
+        "OpenCV",
+        "Conversational AI"
+      ]
+    },
+    {
+      "name": "Voice Assisted Terminal",
+      "description": "Engineered a voice-controlled terminal utilizing Google's generative AI models to execute shell commands via natural language, published as a PyPI package.",
+      "technologies": [
+        "Python",
+        "Generative AI",
+        "PyPI"
+      ]
+    }
+  ],
+  "preferred_roles": [
+    "Machine Learning Engineer",
+    "Deep Learning Engineer",
+    "AI Engineer",
+    "Software Engineer"
+  ],
+  "salary_min": null,
+  "salary_max": null,
+  "location_preferences": [],
+  "total_experience_years": 1,
+  "search_keywords": [
+    "Machine Learning Engineer",
+    "Deep Learning Engineer",
+    "AI Engineer",
+    "Python Developer",
+    "Computer Vision",
+    "PyTorch",
+    "TensorFlow",
+    "OpenCV"
+  ],
+  "topsis_weights": {
+    "skill": 0.3,
+    "salary": 0.3,
+    "role": 0.2,
+    "location": 0.1,
+    "seniority": 0.1
+  }
+}

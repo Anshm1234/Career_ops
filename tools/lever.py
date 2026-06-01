@@ -14,10 +14,14 @@ def scrape_lever(company_slug: str) -> dict:
         company_slug: e.g. 'reddit', 'carta', 'plaid'
     """
     url = f"https://api.lever.co/v0/postings/{company_slug}?mode=json"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+    }
 
     for attempt in range(1, RETRY_ATTEMPTS + 1):
         try:
-            resp = requests.get(url, timeout=REQUEST_TIMEOUT)
+            resp = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
             resp.raise_for_status()
             postings = resp.json()
 

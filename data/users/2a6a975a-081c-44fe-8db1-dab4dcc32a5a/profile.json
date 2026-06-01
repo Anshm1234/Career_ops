@@ -1,0 +1,127 @@
+{
+  "name": "Ansh Madaan",
+  "email": "amadaan_be23@thapar.edu",
+  "phone": "+91 9463003755",
+  "location": "Punjab, India",
+  "skills": [
+    "C/C++",
+    "Python",
+    "SQL",
+    "R",
+    "JavaScript",
+    "HTML",
+    "CSS",
+    "TensorFlow",
+    "scikit-learn",
+    "FastAPI",
+    "Pydantic",
+    "OpenCV",
+    "NumPy",
+    "Pandas",
+    "Matplotlib",
+    "PyTorch",
+    "MySQL",
+    "MongoDB",
+    "Git",
+    "Postman",
+    "Jupyter Notebook",
+    "PyPI",
+    "Figma",
+    "VS Code",
+    "DSA",
+    "OOP",
+    "OS",
+    "DBMS",
+    "Computer Networks",
+    "Software Engineering",
+    "Deep Learning",
+    "CNN",
+    "LSTM",
+    "NLP",
+    "Speech-to-Text",
+    "TTS",
+    "Face Recognition"
+  ],
+  "experience_years": {
+    "Python": 2,
+    "FastAPI": 1,
+    "Deep Learning": 1,
+    "TensorFlow": 1,
+    "OpenCV": 1,
+    "C++": 2
+  },
+  "education": "B.Tech in Computer Science, Thapar Institute of Engineering and Technology (2023 - Present)",
+  "certifications": [],
+  "projects": [
+    {
+      "name": "Career Ops - AI-Powered Job Application Agent",
+      "description": "An end-to-end FastAPI job discovery platform aggregating opportunities from 40+ portals and using Gemini and Pydantic to match candidates.",
+      "technologies": [
+        "FastAPI",
+        "Pydantic",
+        "Gemini API",
+        "Python"
+      ]
+    },
+    {
+      "name": "EEG-based Schizophrenia Detection using Deep Learning",
+      "description": "A hybrid CNN-LSTM with attention mechanism designed to classify clinical EEG data with high accuracy, visualized using Grad-CAM.",
+      "technologies": [
+        "TensorFlow",
+        "PyTorch",
+        "Python",
+        "Deep Learning",
+        "CNN",
+        "LSTM"
+      ]
+    },
+    {
+      "name": "Voice Assisted Terminal",
+      "description": "A voice-controlled terminal translating natural language into shell commands using Google Generative AI, published on PyPI.",
+      "technologies": [
+        "Python",
+        "Google Generative AI",
+        "PyPI"
+      ]
+    },
+    {
+      "name": "Face Recognition-Based Chatbot Authentication System",
+      "description": "Real-time face recognition authentication system using OpenCV linked to a TensorFlow NLP chatbot with speech-to-text features.",
+      "technologies": [
+        "Python",
+        "OpenCV",
+        "TensorFlow",
+        "NLP"
+      ]
+    }
+  ],
+  "preferred_roles": [
+    "Software Engineer",
+    "Machine Learning Engineer",
+    "Backend Developer",
+    "Python Developer"
+  ],
+  "salary_min": null,
+  "salary_max": null,
+  "location_preferences": [],
+  "total_experience_years": 1,
+  "search_keywords": [
+    "python",
+    "machine learning",
+    "deep learning",
+    "fastapi",
+    "software engineer",
+    "backend developer",
+    "computer vision",
+    "artificial intelligence",
+    "nlp",
+    "tensorflow"
+  ],
+  "topsis_weights": {
+    "skill": 0.3,
+    "salary": 0.3,
+    "role": 0.2,
+    "location": 0.1,
+    "seniority": 0.1
+  }
+}

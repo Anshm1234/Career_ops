@@ -18,8 +18,12 @@ import logging
 from pathlib import Path
 from datetime import datetime
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import os
+import httpx
+from jose import jwt, JWTError
 
 from config import UPLOADS_DIR, DATA_DIR, profile_path
 from tools.resume_parser import parse_resume
@@ -28,6 +32,75 @@ from tools.topsis import rank_jobs, DEFAULT_WEIGHTS
 
 log = logging.getLogger(__name__)
 app = FastAPI(title="Career Ops API")
+
+# ── Supabase JWT verification ─────────────────────────────────────────────────
+# Purpose: every protected endpoint calls get_current_user() which reads the
+# Authorization: Bearer <token> header, verifies it's a valid Supabase JWT,
+# and returns the real Supabase user ID. This prevents anyone from reading
+# another user's jobs by guessing their user_id.
+
+_bearer = HTTPBearer(auto_error=False)
+_SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+_SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+_SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+_jwks_cache: dict = {}
+
+async def _fetch_jwks() -> list:
+    """Fetch Supabase public JWKS keys for ES256 verification."""
+    global _jwks_cache
+    if _jwks_cache:
+        return _jwks_cache.get("keys", [])
+    url = f"{_SUPABASE_URL}/auth/v1/.well-known/jwks.json"
+    async with httpx.AsyncClient() as client:
+        r = await client.get(url, headers={"apikey": _SUPABASE_SERVICE_KEY}, timeout=10)
+        r.raise_for_status()
+        _jwks_cache = r.json()
+        return _jwks_cache.get("keys", [])
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> str:
+    """
+    Verify Supabase JWT (ES256 or HS256) and return the user's UUID.
+    - ES256: fetches public JWKS from Supabase and verifies signature
+    - HS256: uses SUPABASE_JWT_SECRET from .env
+    - Neither configured: local dev mode (no auth)
+    """
+    if not _SUPABASE_URL and not _SUPABASE_JWT_SECRET:
+        log.warning("No Supabase config — running in unauthenticated mode")
+        return "local-dev-user"
+
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+
+    token = credentials.credentials
+    try:
+        header = jwt.get_unverified_header(token)
+        alg = header.get("alg", "HS256")
+
+        if alg == "ES256":
+            # Fetch JWKS and find matching key
+            keys = await _fetch_jwks()
+            kid = header.get("kid")
+            key = next((k for k in keys if k.get("kid") == kid), None)
+            if not key and keys:
+                key = keys[0]  # fallback to first key
+            if not key:
+                raise HTTPException(status_code=401, detail="No matching JWKS key found")
+            payload = jwt.decode(token, key, algorithms=["ES256"], audience="authenticated")
+        else:
+            # HS256 fallback
+            if not _SUPABASE_JWT_SECRET:
+                raise HTTPException(status_code=401, detail="SUPABASE_JWT_SECRET not configured")
+            payload = jwt.decode(token, _SUPABASE_JWT_SECRET, algorithms=["HS256"], audience="authenticated")
+
+        user_id: str = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token payload")
+        return user_id
+
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt"}
 
@@ -63,80 +136,102 @@ def _read_status(user_id: str) -> dict:
 
 # ── Background task ───────────────────────────────────────────────────────────
 
+def _get_supabase():
+    """Get Supabase client using service role key."""
+    from supabase import create_client
+    url = os.getenv("SUPABASE_URL", "")
+    key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    if not url or not key:
+        return None
+    return create_client(url, key)
+
+
+def _fetch_jobs_from_db(supabase, limit: int = 5000) -> list[dict]:
+    """
+    Fetch all active jobs from Supabase jobs table.
+    Returns list of job dicts compatible with filter_jobs().
+    """
+    try:
+        res = supabase.table("jobs") \
+            .select("*") \
+            .eq("is_active", True) \
+            .limit(limit) \
+            .execute()
+        return res.data or []
+    except Exception as e:
+        log.error("Failed to fetch jobs from DB: %s", e)
+        return []
+
+
 def _scrape_and_filter(user_id: str, profile: dict):
     """
     Runs in the background after resume upload.
-    Scrapes all companies, filters against profile, saves matched_jobs.json.
-    Orchestrator is called directly (bypassing Gemini agent loop) to avoid
-    module-level state conflicts between concurrent users.
 
-    Workday uses sync_playwright which cannot run inside an existing event loop.
-    It is executed in a separate thread via concurrent.futures to get its own loop.
+    New approach (DB-backed):
+    1. Fetch all jobs from Supabase jobs table (fast, ~1 sec)
+    2. Per-user Internshala scrape with profile keywords (~60 sec)
+    3. filter_jobs() + rank_jobs() against profile
+    4. Save matched results
+
+    Greenhouse/Lever/Ashby jobs come from the daily scrape_all.py cron job.
+    Internshala is still per-user because it needs personalised keyword search.
     """
     try:
-        _write_status(user_id, "scraping", "Fetching jobs from all companies...")
+        _write_status(user_id, "scraping", "Loading jobs from database...")
 
-        from data.companies import COMPANIES
-        from tools.greenhouse import scrape_greenhouse
-        from tools.lever import scrape_lever
-        from tools.ashby import scrape_ashby
-        from tools.workday import scrape_workday
+        from tools.internshala import scrape_internshala
 
         all_jobs = []
         seen_urls = set()
 
-        def _collect(jobs: list):
+        def _collect(jobs: list, source: str):
+            added = 0
             for job in jobs:
                 url = job.get("url", "")
                 if url and url not in seen_urls:
                     seen_urls.add(url)
                     all_jobs.append(job)
+                    added += 1
+            log.info("%s: added %d jobs", source, added)
 
-        for slug in COMPANIES.get("greenhouse", []):
-            result = scrape_greenhouse(slug)
-            if result["success"]:
-                _collect(result["jobs"])
+        # ── Step 1: Load from Supabase DB ─────────────────────────────────────
+        supabase = _get_supabase()
+        if supabase:
+            db_jobs = _fetch_jobs_from_db(supabase)
+            _collect(db_jobs, "database")
+            log.info("Loaded %d jobs from Supabase", len(db_jobs))
+        else:
+            # Fallback: scrape directly if Supabase not configured
+            log.warning("Supabase not configured — falling back to direct scraping")
+            from data.companies import COMPANIES
+            from tools.greenhouse import scrape_greenhouse
+            from tools.lever import scrape_lever
+            from tools.ashby import scrape_ashby
 
-        for slug in COMPANIES.get("lever", []):
-            result = scrape_lever(slug)
-            if result["success"]:
-                _collect(result["jobs"])
+            for slug in COMPANIES.get("greenhouse", []):
+                r = scrape_greenhouse(slug)
+                if r["success"]: _collect(r["jobs"], f"greenhouse/{slug}")
 
-        for slug in COMPANIES.get("ashby", []):
-            result = scrape_ashby(slug)
-            if result["success"]:
-                _collect(result["jobs"])
+            for slug in COMPANIES.get("lever", []):
+                r = scrape_lever(slug)
+                if r["success"]: _collect(r["jobs"], f"lever/{slug}")
 
-        # Workday uses sync_playwright which conflicts with FastAPI's event loop on Windows.
-        # Fix: spawn a completely separate Python process per company via subprocess.
-        import subprocess, sys, tempfile
+            for slug in COMPANIES.get("ashby", []):
+                r = scrape_ashby(slug)
+                if r["success"]: _collect(r["jobs"], f"ashby/{slug}")
 
-        for entry in COMPANIES.get("workday", []):
-            script = (
-                "import json, sys\n"
-                "sys.path.insert(0, r'" + str(Path(__file__).parent) + "')\n"
-                "from tools.workday import scrape_workday\n"
-                "result = scrape_workday(" + repr(entry["name"]) + ", " + repr(entry["url"]) + ")\n"
-                "print(json.dumps(result))\n"
-            )
-            try:
-                proc = subprocess.run(
-                    [sys.executable, "-c", script],
-                    capture_output=True, text=True, timeout=90,
-                )
-                if proc.stdout.strip():
-                    result = json.loads(proc.stdout.strip())
-                    if result.get("success"):
-                        _collect(result["jobs"])
-                elif proc.stderr:
-                    log.warning("Workday %s stderr: %s", entry["name"], proc.stderr[-300:])
-            except subprocess.TimeoutExpired:
-                log.warning("Workday %s timed out", entry["name"])
-            except Exception as e:
-                log.warning("Workday %s failed: %s", entry["name"], e)
+        # ── Step 2: Internshala — per-user keyword scrape ─────────────────────
+        _write_status(user_id, "scraping", f"Loaded {len(all_jobs)} jobs from DB. Scraping Internshala...")
+        internshala_keywords = (profile.get("search_keywords") or ["software engineer"])[:3]
+        for kw in internshala_keywords:
+            result = scrape_internshala(keyword=kw, fetch_jobs=True, fetch_internships=True)
+            if result["success"] and result["jobs"]:
+                _collect(result["jobs"], f"internshala/{kw}")
+            else:
+                log.warning("internshala/%s failed: %s", kw, result.get("error"))
 
-        _write_status(user_id, "filtering", f"Scraped {len(all_jobs)} jobs, filtering...")
-
+        # ── Step 3: Filter + rank ─────────────────────────────────────────────
+        _write_status(user_id, "filtering", f"Filtering {len(all_jobs)} jobs...")
         matched = filter_jobs(all_jobs, profile, min_matches=2)
 
         _matched_jobs_path(user_id).write_text(
@@ -144,11 +239,11 @@ def _scrape_and_filter(user_id: str, profile: dict):
             encoding="utf-8",
         )
 
-        _write_status(user_id, "ready", f"{len(matched)} jobs matched out of {len(all_jobs)} scraped")
-        log.info("user=%s scrape done: %d/%d jobs matched", user_id, len(matched), len(all_jobs))
+        _write_status(user_id, "ready", f"{len(matched)} jobs matched out of {len(all_jobs)} loaded")
+        log.info("user=%s done: %d/%d matched", user_id, len(matched), len(all_jobs))
 
     except Exception as e:
-        log.exception("Scrape failed for user=%s", user_id)
+        log.exception("Pipeline failed for user=%s", user_id)
         _write_status(user_id, "failed", str(e))
 
 
@@ -158,15 +253,16 @@ def _scrape_and_filter(user_id: str, profile: dict):
 async def upload_resume(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    salary_min: int | None = Form(default=None, description="Minimum expected annual salary (INR e.g. 800000 for ₹8L)"),
-    salary_max: int | None = Form(default=None, description="Maximum expected annual salary (INR e.g. 2000000 for ₹20L)"),
-    location_preferences: str | None = Form(default=None, description="Comma-separated locations e.g. 'remote,Bangalore,Delhi'"),
-    preferred_roles: str | None = Form(default=None, description="Comma-separated roles e.g. 'ML Engineer,Data Scientist'"),
-    weight_skill:     float = Form(default=DEFAULT_WEIGHTS["skill"],     description="TOPSIS weight for skill match (0–1)"),
-    weight_salary:    float = Form(default=DEFAULT_WEIGHTS["salary"],    description="TOPSIS weight for salary fit (0–1)"),
-    weight_role:      float = Form(default=DEFAULT_WEIGHTS["role"],      description="TOPSIS weight for role match (0–1)"),
-    weight_location:  float = Form(default=DEFAULT_WEIGHTS["location"],  description="TOPSIS weight for location fit (0–1)"),
-    weight_seniority: float = Form(default=DEFAULT_WEIGHTS["seniority"], description="TOPSIS weight for seniority fit (0–1)"),
+    salary_min: int | None = Form(default=None),
+    salary_max: int | None = Form(default=None),
+    location_preferences: str | None = Form(default=None),
+    preferred_roles: str | None = Form(default=None),
+    weight_skill:     float = Form(default=DEFAULT_WEIGHTS["skill"]),
+    weight_salary:    float = Form(default=DEFAULT_WEIGHTS["salary"]),
+    weight_role:      float = Form(default=DEFAULT_WEIGHTS["role"]),
+    weight_location:  float = Form(default=DEFAULT_WEIGHTS["location"]),
+    weight_seniority: float = Form(default=DEFAULT_WEIGHTS["seniority"]),
+    current_user: str = Depends(get_current_user),
 ):
     """
     Upload a resume. Parses it immediately, then kicks off a background scrape.
@@ -183,7 +279,7 @@ async def upload_resume(
             detail=f"Unsupported file type '{suffix}'. Use PDF, DOCX, or TXT."
         )
 
-    user_id = str(uuid.uuid4())
+    user_id = current_user  # Real Supabase user ID from JWT
     save_path = Path(UPLOADS_DIR) / f"{user_id}{suffix}"
 
     with open(save_path, "wb") as f:
@@ -231,24 +327,16 @@ async def upload_resume(
 
 
 @app.get("/jobs/status/{user_id}")
-async def job_status(user_id: str):
-    """
-    Poll scrape progress.
-
-    Returns { status, detail, updated_at }
-    status is one of: scraping | filtering | ready | failed | not_found
-    """
+async def job_status(user_id: str, current_user: str = Depends(get_current_user)):
+    if current_user != "local-dev-user" and current_user != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return JSONResponse(_read_status(user_id))
 
 
 @app.get("/jobs/search/{user_id}")
-async def search_jobs(user_id: str):
-    """
-    Return TOPSIS-ranked jobs for a user. Only available once status=ready.
-
-    Returns { user_id, total, weights_used, jobs } sorted best-fit first.
-    Each job includes topsis_score, topsis_rank, and dimension_scores.
-    """
+async def search_jobs(user_id: str, current_user: str = Depends(get_current_user)):
+    if current_user != "local-dev-user" and current_user != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     status = _read_status(user_id)
     if status["status"] == "not_found":
         raise HTTPException(status_code=404, detail="User not found. Upload a resume first.")
@@ -276,8 +364,10 @@ async def search_jobs(user_id: str):
 
 
 @app.get("/profile/{user_id}")
-async def get_profile(user_id: str):
+async def get_profile(user_id: str, current_user: str = Depends(get_current_user)):
     """Fetch the stored profile for a user."""
+    if current_user != "local-dev-user" and current_user != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     path = profile_path(user_id)
     if not Path(path).exists():
         raise HTTPException(status_code=404, detail="Profile not found.")

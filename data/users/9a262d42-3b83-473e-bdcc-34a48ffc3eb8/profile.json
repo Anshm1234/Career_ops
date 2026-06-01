@@ -1,0 +1,115 @@
+{
+  "name": "Ansh Madaan",
+  "email": "amadaan be23@thapar.edu",
+  "phone": "+91 9463003755",
+  "location": null,
+  "skills": [
+    "Python",
+    "C/C++",
+    "R",
+    "SQL",
+    "Git",
+    "VS Code",
+    "Visual Studio",
+    "PyTorch",
+    "TensorFlow",
+    "scikit-learn",
+    "NumPy",
+    "Pandas",
+    "Matplotlib",
+    "Data Structures & Algorithms",
+    "OOP",
+    "Problem Solving",
+    "Deep Learning",
+    "CNN",
+    "LSTM",
+    "Attention Models",
+    "EEG Processing",
+    "Bandpass Filtering",
+    "Temporal Windowing",
+    "Grad-CAM",
+    "Integrated Gradients",
+    "Face Recognition",
+    "OpenCV",
+    "Conversational AI",
+    "Generative AI",
+    "Natural Language Processing",
+    "Shell Scripting",
+    "PyPI"
+  ],
+  "experience_years": {
+    "Python": 1,
+    "Deep Learning": 1,
+    "PyTorch": 1,
+    "TensorFlow": 1,
+    "CNN": 1,
+    "LSTM": 1,
+    "Face Recognition": 1,
+    "OpenCV": 1,
+    "Generative AI": 1,
+    "Natural Language Processing": 1,
+    "Git": 1
+  },
+  "education": "Thapar Institute of Engineering and Technology, B.Tech",
+  "certifications": [],
+  "projects": [
+    {
+      "name": "Face Recognition-Based Chatbot Authentication System",
+      "description": "Built a secure chatbot access system using real-time face recognition with OpenCV, integrating facial authentication with conversational AI for personalized interaction, and ensuring high-accuracy face matching with efficient encoding.",
+      "technologies": [
+        "Face Recognition",
+        "OpenCV",
+        "Conversational AI"
+      ]
+    },
+    {
+      "name": "Voice Assisted Terminal",
+      "description": "Engineered a voice-controlled terminal enabling execution of complex shell operations via natural language, integrating Google’s generative AI models for intelligent command understanding, and published as a PyPI package for improved developer productivity.",
+      "technologies": [
+        "Generative AI",
+        "Natural Language Processing",
+        "PyPI",
+        "Python",
+        "Shell Scripting"
+      ]
+    }
+  ],
+  "preferred_roles": [
+    "AI Engineer",
+    "Machine Learning Engineer",
+    "Deep Learning Engineer",
+    "Computer Vision Engineer",
+    "Backend Developer"
+  ],
+  "salary_min": 800000,
+  "salary_max": 4000000,
+  "location_preferences": [
+    "remote",
+    "banglore",
+    "delhi",
+    "gurgaon",
+    "us"
+  ],
+  "total_experience_years": 0,
+  "search_keywords": [
+    "Python",
+    "Deep Learning",
+    "Machine Learning",
+    "Computer Vision",
+    "Generative AI",
+    "PyTorch",
+    "TensorFlow",
+    "OpenCV",
+    "Natural Language Processing",
+    "AI Engineer",
+    "Machine Learning Engineer",
+    "Data Structures"
+  ],
+  "topsis_weights": {
+    "skill": 0.3,
+    "salary": 0.3,
+    "role": 0.2,
+    "location": 0.1,
+    "seniority": 0.1
+  }
+}

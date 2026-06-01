@@ -1,0 +1,116 @@
+{
+  "name": "Ansh Madaan",
+  "email": "amadaan be23@thapar.edu",
+  "phone": "+91 9463003755",
+  "location": "India",
+  "skills": [
+    "Python",
+    "C/C++",
+    "R",
+    "SQL",
+    "Git",
+    "VS Code",
+    "Visual Studio",
+    "PyTorch",
+    "TensorFlow",
+    "scikit-learn",
+    "NumPy",
+    "Pandas",
+    "Matplotlib",
+    "Data Structures & Algorithms",
+    "OOP",
+    "Problem Solving",
+    "Deep Learning",
+    "CNN",
+    "LSTM",
+    "Attention Models",
+    "Grad-CAM",
+    "Integrated Gradients",
+    "EEG Processing",
+    "Face Recognition",
+    "OpenCV",
+    "Chatbot Development",
+    "Conversational AI",
+    "Generative AI",
+    "Natural Language Processing",
+    "Shell Scripting",
+    "PyPI Package Development"
+  ],
+  "experience_years": {},
+  "education": "B.Tech from Thapar Institute of Engineering and Technology (2023 – Present); Class XII from Govt. Boys Senior Secondary School (2023)",
+  "certifications": [],
+  "projects": [
+    {
+      "name": "EEG-based Schizophrenia Detection using Deep Learning",
+      "description": "Developed a hybrid CNN–LSTM with attention model achieving 97% accuracy for schizophrenia detection using EEG data. Applied bandpass filtering and temporal windowing for robust feature extraction, and improved interpretability using Grad-CAM and Integrated Gradients.",
+      "technologies": [
+        "CNN",
+        "LSTM",
+        "Deep Learning",
+        "Attention Models",
+        "EEG",
+        "Grad-CAM",
+        "Integrated Gradients",
+        "Python",
+        "PyTorch",
+        "TensorFlow"
+      ]
+    },
+    {
+      "name": "Face Recognition-Based Chatbot Authentication System",
+      "description": "Built a secure chatbot access system integrating real-time face recognition using OpenCV with conversational AI for personalized interaction. Ensured high-accuracy face matching with efficient encoding and secure data handling.",
+      "technologies": [
+        "Face Recognition",
+        "OpenCV",
+        "Chatbot",
+        "Conversational AI",
+        "Python"
+      ]
+    },
+    {
+      "name": "Voice Assisted Terminal",
+      "description": "Engineered a voice-controlled terminal enabling execution of complex shell operations via natural language. Integrated Google’s generative AI models for intelligent command understanding and published it as a PyPI package.",
+      "technologies": [
+        "Voice Control",
+        "Natural Language Processing",
+        "Generative AI",
+        "Google AI",
+        "Shell Scripting",
+        "Python",
+        "PyPI"
+      ]
+    }
+  ],
+  "preferred_roles": [
+    "Machine Learning Engineer",
+    "AI Developer",
+    "Deep Learning Engineer",
+    "Python Developer"
+  ],
+  "salary_min": 800000,
+  "salary_max": 4000000,
+  "location_preferences": [],
+  "total_experience_years": 0,
+  "search_keywords": [
+    "Python",
+    "Deep Learning",
+    "Machine Learning",
+    "PyTorch",
+    "TensorFlow",
+    "CNN",
+    "LSTM",
+    "Generative AI",
+    "Natural Language Processing",
+    "OpenCV",
+    "Data Structures",
+    "Algorithms",
+    "AI Developer"
+  ],
+  "topsis_weights": {
+    "skill": 0.3,
+    "salary": 0.3,
+    "role": 0.2,
+    "location": 0.1,
+    "seniority": 0.1
+  }
+}
