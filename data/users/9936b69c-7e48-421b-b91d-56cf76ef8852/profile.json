@@ -1,0 +1,38 @@
+{
+  "name": null,
+  "email": null,
+  "phone": null,
+  "location": null,
+  "skills": [
+    "Breadboard circuit design",
+    "Digital electronics",
+    "IR sensors",
+    "Tinkercad",
+    "Integrated Circuits (ICs)",
+    "Hardware troubleshooting"
+  ],
+  "experience_years": {},
+  "education": null,
+  "certifications": [],
+  "projects": [],
+  "preferred_roles": [],
+  "salary_min": null,
+  "salary_max": null,
+  "location_preferences": [],
+  "total_experience_years": null,
+  "search_keywords": [
+    "embedded systems",
+    "hardware engineer",
+    "electronics technician",
+    "digital design",
+    "tinkercad",
+    "circuit design"
+  ],
+  "topsis_weights": {
+    "skill": 0.3,
+    "salary": 0.3,
+    "role": 0.2,
+    "location": 0.1,
+    "seniority": 0.1
+  }
+}

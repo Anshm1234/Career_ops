@@ -1,0 +1,132 @@
+{
+  "name": "Ansh Madaan",
+  "email": "amadaan be23@thapar.edu",
+  "phone": "+91 9463003755",
+  "location": null,
+  "skills": [
+    "Python",
+    "C/C++",
+    "R",
+    "SQL",
+    "Git",
+    "VS Code",
+    "Visual Studio",
+    "PyTorch",
+    "TensorFlow",
+    "scikit-learn",
+    "NumPy",
+    "Pandas",
+    "Matplotlib",
+    "Data Structures & Algorithms",
+    "OOP",
+    "Problem Solving",
+    "CNN",
+    "LSTM",
+    "Deep Learning",
+    "Attention Models",
+    "Bandpass Filtering",
+    "Grad-CAM",
+    "Integrated Gradients",
+    "OpenCV",
+    "Facial Recognition",
+    "Chatbot",
+    "Conversational AI",
+    "Generative AI",
+    "Natural Language Processing",
+    "Shell Scripting",
+    "PyPI"
+  ],
+  "experience_years": {
+    "Python": 0,
+    "C/C++": 0,
+    "R": 0,
+    "SQL": 0,
+    "Git": 0,
+    "PyTorch": 0,
+    "TensorFlow": 0,
+    "scikit-learn": 0,
+    "NumPy": 0,
+    "Pandas": 0,
+    "Matplotlib": 0,
+    "Deep Learning": 0,
+    "CNN": 0,
+    "LSTM": 0,
+    "OpenCV": 0,
+    "Generative AI": 0,
+    "Natural Language Processing": 0
+  },
+  "education": "B.Tech, Thapar Institute of Engineering and Technology, 2023 – Present",
+  "certifications": [],
+  "projects": [
+    {
+      "name": "EEG-based Schizophrenia Detection using Deep Learning",
+      "description": "Developed a hybrid CNN–LSTM with attention model achieving 97% accuracy for EEG-based schizophrenia detection. Applied bandpass filtering and temporal windowing for robust EEG feature extraction, and improved interpretability using Grad-CAM, Integrated Gradients, and attention weight visualization.",
+      "technologies": [
+        "CNN",
+        "LSTM",
+        "Deep Learning",
+        "Attention Models",
+        "PyTorch",
+        "TensorFlow",
+        "Grad-CAM",
+        "Integrated Gradients"
+      ]
+    },
+    {
+      "name": "Face Recognition-Based Chatbot Authentication System",
+      "description": "Built a secure chatbot access system using real-time face recognition with OpenCV. Integrated facial authentication with conversational AI for personalized interaction, ensuring high-accuracy face matching with efficient encoding and secure data handling.",
+      "technologies": [
+        "Face Recognition",
+        "OpenCV",
+        "Chatbot",
+        "Conversational AI",
+        "Deep Learning",
+        "Python"
+      ]
+    },
+    {
+      "name": "Voice Assisted Terminal",
+      "description": "Engineered a voice-controlled terminal enabling execution of complex shell operations via natural language. Integrated Google's generative AI models for intelligent command understanding, and published it as a PyPI package to improve developer productivity.",
+      "technologies": [
+        "Voice Control",
+        "Natural Language Processing",
+        "Generative AI",
+        "Shell Scripting",
+        "Python",
+        "PyPI"
+      ]
+    }
+  ],
+  "preferred_roles": [
+    "AI Engineer",
+    "Machine Learning Engineer",
+    "Deep Learning Engineer",
+    "Data Scientist",
+    "Software Developer (AI/ML Focus)"
+  ],
+  "salary_min": 800000,
+  "salary_max": 4000000,
+  "location_preferences": [],
+  "total_experience_years": 0,
+  "search_keywords": [
+    "Python",
+    "Deep Learning",
+    "Machine Learning",
+    "PyTorch",
+    "TensorFlow",
+    "CNN",
+    "LSTM",
+    "Generative AI",
+    "Natural Language Processing",
+    "OpenCV",
+    "AI Engineer",
+    "Machine Learning Engineer"
+  ],
+  "topsis_weights": {
+    "skill": 0.3,
+    "salary": 0.3,
+    "role": 0.2,
+    "location": 0.1,
+    "seniority": 0.1
+  }
+}

@@ -1,0 +1,31 @@
+# Secrets — NEVER commit these
+.env
+
+# Virtual environment
+venv/
+.venv/
+env/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Generated data (large, regenerated on each run)
+data/jobs.json
+logs/
+
+# Playwright browser binaries
+.playwright/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
