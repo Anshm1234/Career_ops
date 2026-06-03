@@ -33,6 +33,11 @@ from tools.topsis import rank_jobs, DEFAULT_WEIGHTS
 log = logging.getLogger(__name__)
 app = FastAPI(title="Career Ops API")
 
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
 # ── Supabase JWT verification ─────────────────────────────────────────────────
 # Purpose: every protected endpoint calls get_current_user() which reads the
 # Authorization: Bearer <token> header, verifies it's a valid Supabase JWT,
@@ -201,7 +206,6 @@ def _scrape_and_filter(user_id: str, profile: dict):
             _collect(db_jobs, "database")
             log.info("Loaded %d jobs from Supabase", len(db_jobs))
         else:
-            # Fallback: scrape directly if Supabase not configured
             log.warning("Supabase not configured — falling back to direct scraping")
             from data.companies import COMPANIES
             from tools.greenhouse import scrape_greenhouse
@@ -211,26 +215,14 @@ def _scrape_and_filter(user_id: str, profile: dict):
             for slug in COMPANIES.get("greenhouse", []):
                 r = scrape_greenhouse(slug)
                 if r["success"]: _collect(r["jobs"], f"greenhouse/{slug}")
-
             for slug in COMPANIES.get("lever", []):
                 r = scrape_lever(slug)
                 if r["success"]: _collect(r["jobs"], f"lever/{slug}")
-
             for slug in COMPANIES.get("ashby", []):
                 r = scrape_ashby(slug)
                 if r["success"]: _collect(r["jobs"], f"ashby/{slug}")
 
-        # ── Step 2: Internshala — per-user keyword scrape ─────────────────────
-        _write_status(user_id, "scraping", f"Loaded {len(all_jobs)} jobs from DB. Scraping Internshala...")
-        internshala_keywords = (profile.get("search_keywords") or ["software engineer"])[:3]
-        for kw in internshala_keywords:
-            result = scrape_internshala(keyword=kw, fetch_jobs=True, fetch_internships=True)
-            if result["success"] and result["jobs"]:
-                _collect(result["jobs"], f"internshala/{kw}")
-            else:
-                log.warning("internshala/%s failed: %s", kw, result.get("error"))
-
-        # ── Step 3: Filter + rank ─────────────────────────────────────────────
+        # ── Step 2: Filter + rank DB jobs, show immediately ───────────────────
         _write_status(user_id, "filtering", f"Filtering {len(all_jobs)} jobs...")
         matched = filter_jobs(all_jobs, profile, min_matches=2)
 
@@ -239,12 +231,35 @@ def _scrape_and_filter(user_id: str, profile: dict):
             encoding="utf-8",
         )
 
-        _write_status(user_id, "ready", f"{len(matched)} jobs matched out of {len(all_jobs)} loaded")
-        log.info("user=%s done: %d/%d matched", user_id, len(matched), len(all_jobs))
+        # Mark ready NOW — user sees DB results immediately
+        _write_status(user_id, "ready", f"{len(matched)} jobs matched. Searching Internshala for more...")
+        log.info("user=%s phase1 done: %d matched from DB", user_id, len(matched))
+
+        # ── Step 3: Internshala in background, then merge ─────────────────────
+        internshala_keywords = (profile.get("search_keywords") or ["software engineer"])[:3]
+        for kw in internshala_keywords:
+            result = scrape_internshala(keyword=kw, fetch_jobs=True, fetch_internships=True)
+            if result["success"] and result["jobs"]:
+                _collect(result["jobs"], f"internshala/{kw}")
+            else:
+                log.warning("internshala/%s failed: %s", kw, result.get("error"))
+
+        # Re-filter with Internshala jobs added
+        matched = filter_jobs(all_jobs, profile, min_matches=2)
+        _matched_jobs_path(user_id).write_text(
+            json.dumps(matched, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        _write_status(user_id, "ready", f"{len(matched)} jobs matched (incl. Internshala)")
+        log.info("user=%s phase2 done: %d total matched", user_id, len(matched))
 
     except Exception as e:
         log.exception("Pipeline failed for user=%s", user_id)
-        _write_status(user_id, "failed", str(e))
+        # If we already wrote ready in phase 1, don't overwrite with failed
+        status = _read_status(user_id)
+        if status.get("status") != "ready":
+            _write_status(user_id, "failed", str(e))
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
