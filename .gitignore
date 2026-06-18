@@ -1,49 +1,46 @@
-# Secrets — NEVER commit these
+# ── Secrets — NEVER commit ────────────────────────────────
 .env
+.env.local
+*.key
 
-# Virtual environment
-venv/
-.venv/
-env/
-ENV/
-
-# Python cache
-__pycache__/
+# ── Python ────────────────────────────────────────────────
+backend/venv/
+backend/.venv/
+**/__pycache__/
 *.py[cod]
 *.pyo
 *.pyd
-.Python
 
-# Generated data (large, regenerated on each run)
-data/jobs.json
-logs/
+# ── Backend generated / user data ─────────────────────────
+backend/data/jobs.json
+backend/data/users/
+backend/uploads/
+backend/logs/
+*.log
 
-# Playwright browser binaries
+# ── Playwright ────────────────────────────────────────────
 .playwright/
 
-# OS junk
-.DS_Store
-Thumbs.db
+# ── Frontend (Next.js) ────────────────────────────────────
+frontend/.next/
+frontend/node_modules/
+frontend/out/
 
-# IDE
+# ── Old dev folders (not part of monorepo) ────────────────
+career-ops-ui/
+venv/
+uploads/
+logs/
+
+# ── Personal / temp ───────────────────────────────────────
+temp.py
+Ansh_Resume.pdf
+
+# ── IDE ───────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 
-# Python
-venv/
-__pycache__/
-*.pyc
-*.pyo
-.env
-
-# User data (never commit)
-data/users/
-uploads/
-
-# Logs
-*.log
-
-# OS
+# ── OS ────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
