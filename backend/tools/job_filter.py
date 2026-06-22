@@ -93,17 +93,36 @@ def _location_matches(job: dict, location_prefs: list[str]) -> tuple[bool, str]:
     job_desc     = _tokenise(job.get("description", ""))
     combined     = f"{job_location} {job_desc}"
 
+    # City aliases — common spelling variants
+    _ALIASES: dict[str, list[str]] = {
+        "bangalore":  ["bengaluru", "bangalore"],
+        "bengaluru":  ["bengaluru", "bangalore"],
+        "delhi":      ["delhi", "new delhi", "ncr", "gurugram", "gurgaon", "noida"],
+        "ncr":        ["delhi", "new delhi", "ncr", "gurugram", "gurgaon", "noida"],
+        "mumbai":     ["mumbai", "bombay"],
+        "hyderabad":  ["hyderabad", "secunderabad"],
+        "chennai":    ["chennai", "madras"],
+    }
+
     for pref in location_prefs:
         p = pref.lower().strip()
-        if p in ("remote", "wfh", "work from home"):
-            # Match if job location or description mentions remote/wfh
-            if any(w in combined for w in ("remote", "wfh", "work from home", "anywhere")):
-                return True, "remote job matches preference"
-        else:
-            if p in job_location:
+
+        # Treat anything starting with "remote" as a remote preference
+        if p.startswith("remote") or p in ("wfh", "work from home", "open to relocation", "anywhere"):
+            if any(w in combined for w in ("remote", "wfh", "work from home", "anywhere", "hybrid")):
+                return True, "remote/hybrid job matches preference"
+            # Also pass if job has no location (likely remote)
+            if not job_location.strip():
+                return True, "no location listed — assumed remote-friendly"
+            continue
+
+        # Check city aliases
+        city_variants = _ALIASES.get(p, [p])
+        for variant in city_variants:
+            if variant in job_location:
                 return True, f"location '{job_location}' matches '{pref}'"
 
-    # If job has no location at all, don't reject it — could be remote/undisclosed
+    # If job has no location at all, don't reject it
     if not job_location.strip():
         return True, "no location in job — included"
 
@@ -139,13 +158,16 @@ def _role_matches(job: dict, preferred_roles: list[str]) -> tuple[bool, str]:
     job_title_expanded = _expand(job_title)
 
     for role in preferred_roles:
-        r = _expand(role.lower().strip())
-        role_words = [w for w in r.split() if len(w) > 3 and w not in _STOP]
-        if not role_words:
-            if r in job_title_expanded:
+        # Split on "/" to handle "Machine Learning / AI Engineer" — check each side separately
+        role_parts = [p.strip() for p in role.split("/")]
+        for part in role_parts:
+            r = _expand(part.lower().strip())
+            role_words = [w for w in r.split() if len(w) > 3 and w not in _STOP]
+            if not role_words:
+                if r in job_title_expanded:
+                    return True, f"title '{job.get('title', '')}' matches role '{role}'"
+            elif all(word in job_title_expanded for word in role_words):
                 return True, f"title '{job.get('title', '')}' matches role '{role}'"
-        elif all(word in job_title_expanded for word in role_words):
-            return True, f"title '{job.get('title', '')}' matches role '{role}'"
 
     return False, f"title '{job.get('title', '')}' not in preferred roles {preferred_roles}"
 
