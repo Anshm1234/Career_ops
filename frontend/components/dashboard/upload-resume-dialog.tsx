@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useRef, useState } from "react"
+import { useRef, useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Check, FileUp, Loader2, UploadCloud, AlertCircle } from "lucide-react"
 import {
@@ -54,6 +54,22 @@ export function UploadResumeDialog({ children }: { children: React.ReactNode }) 
   )
 
   const running = step > -1
+
+  // Pre-fill roles and location from saved onboarding profile when dialog opens
+  useEffect(() => {
+    if (!open) return
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return
+      supabase.from("profiles").select("profile_data").eq("user_id", user.id).single()
+        .then(({ data }) => {
+          if (!data?.profile_data) return
+          const pd = data.profile_data
+          if (pd.preferred_roles?.length)     setRoles(pd.preferred_roles.join(", "))
+          if (pd.preferred_locations?.length) setLoc(pd.preferred_locations.join(", "))
+        })
+    })
+  }, [open])
 
   function handleFile(f?: File | null) {
     if (f) setFile(f)
@@ -116,6 +132,25 @@ export function UploadResumeDialog({ children }: { children: React.ReactNode }) 
 
       // Store real Supabase user ID so jobs page can fetch results
       localStorage.setItem("career_ops_user_id", user.id)
+
+      // Record this resume in profile_data.resumes for the profile page list
+      const supabaseClient = createClient()
+      supabaseClient.from("profiles").select("profile_data").eq("user_id", user.id).single()
+        .then(({ data: profileRow }) => {
+          const existing = profileRow?.profile_data?.resumes ?? []
+          supabaseClient.from("profiles").upsert(
+            {
+              user_id: user.id,
+              profile_data: {
+                ...profileRow?.profile_data,
+                resumes: [{ name: file.name, uploaded_at: new Date().toISOString() }, ...existing],
+              },
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id" }
+          )
+        })
+
       pollStatus(user.id)
 
     } catch (err) {
@@ -187,11 +222,17 @@ export function UploadResumeDialog({ children }: { children: React.ReactNode }) 
             {/* Preferences */}
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="roles" className="text-xs text-muted-foreground">Preferred roles</Label>
-                <Input id="roles" placeholder="ML Engineer" value={roles} onChange={(e) => setRoles(e.target.value)} />
+                <Label htmlFor="roles" className="text-xs text-muted-foreground">
+                  Preferred roles
+                  {roles && <span className="ml-1.5 text-primary/60">· from profile</span>}
+                </Label>
+                <Input id="roles" placeholder="ML Engineer, Backend" value={roles} onChange={(e) => setRoles(e.target.value)} />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="loc" className="text-xs text-muted-foreground">Location</Label>
+                <Label htmlFor="loc" className="text-xs text-muted-foreground">
+                  Location
+                  {loc && <span className="ml-1.5 text-primary/60">· from profile</span>}
+                </Label>
                 <Input id="loc" placeholder="Remote, Bangalore" value={loc} onChange={(e) => setLoc(e.target.value)} />
               </div>
               <div className="flex flex-col gap-1.5">

@@ -87,12 +87,17 @@ async def get_current_user(
     - ES256: fetches public JWKS from Supabase and verifies signature
     - HS256: uses SUPABASE_JWT_SECRET from .env
     - Neither configured: local dev mode (no auth)
+    - Demo mode: if no token and DEMO_USER_ID is set, allow it through
     """
     if not _SUPABASE_URL and not _SUPABASE_JWT_SECRET:
         log.warning("No Supabase config — running in unauthenticated mode")
         return "local-dev-user"
 
     if not credentials:
+        # Demo mode: allow unauthenticated access AS the demo user only.
+        demo_user = os.getenv("DEMO_USER_ID", "")
+        if demo_user:
+            return demo_user
         raise HTTPException(status_code=401, detail="Missing Authorization header")
 
     token = credentials.credentials
@@ -168,20 +173,151 @@ def _get_supabase():
     return create_client(url, key)
 
 
-def _fetch_jobs_from_db(supabase, limit: int = 5000) -> list[dict]:
+def _fetch_jobs_from_db(supabase, limit: int = 10000) -> list[dict]:
     """
     Fetch all active jobs from Supabase jobs table.
-    Returns list of job dicts compatible with filter_jobs().
+
+    Supabase caps each REST response at 1000 rows regardless of .limit(),
+    so we paginate with .range() until we've pulled everything (or hit `limit`).
     """
+    all_rows = []
+    page_size = 1000
+    start = 0
     try:
-        res = supabase.table("jobs") \
-            .select("*") \
-            .eq("is_active", True) \
-            .limit(limit) \
-            .execute()
-        return res.data or []
+        while start < limit:
+            end = start + page_size - 1
+            res = supabase.table("jobs") \
+                .select("*") \
+                .eq("is_active", True) \
+                .range(start, end) \
+                .execute()
+            rows = res.data or []
+            all_rows.extend(rows)
+            if len(rows) < page_size:
+                break          # last page
+            start += page_size
+        return all_rows
     except Exception as e:
         log.error("Failed to fetch jobs from DB: %s", e)
+        return all_rows
+
+
+def _upsert_jobs_to_db(supabase, jobs: list[dict]):
+    """
+    Upsert a batch of jobs (e.g. per-user Internshala results) into the jobs
+    table so they have a stable id that user_matches can reference.
+    Uses on_conflict=id so re-scraping the same job updates rather than dupes.
+    """
+    if not jobs:
+        return
+    from datetime import timezone
+    now = datetime.now(timezone.utc).isoformat()
+    records, seen = [], set()
+    for job in jobs:
+        jid = job.get("id", "")
+        if not jid or jid in seen:
+            continue
+        seen.add(jid)
+        records.append({
+            "id":          jid,
+            "title":       job.get("title", ""),
+            "company":     job.get("company", ""),
+            "url":         job.get("url", ""),
+            "location":    job.get("location", ""),
+            "description": (job.get("description", "") or "")[:10000],
+            "source":      job.get("source", "internshala"),
+            "posted_at":   job.get("posted_at", ""),
+            "scraped_at":  now,
+            "is_active":   True,
+        })
+    try:
+        for i in range(0, len(records), 100):
+            supabase.table("jobs").upsert(records[i:i+100], on_conflict="id").execute()
+    except Exception as e:
+        log.error("Failed to upsert internshala jobs: %s", e)
+
+
+def _save_matches_to_db(supabase, user_id: str, ranked: list[dict]):
+    """
+    Replace this user's matches in user_matches with the freshly ranked set.
+    Stores job_id refs + scores; full job data is JOINed back from jobs table on read.
+    """
+    try:
+        # Clear old matches for this user (fresh upload = fresh matches)
+        supabase.table("user_matches").delete().eq("user_id", user_id).execute()
+
+        rows = []
+        for job in ranked:
+            jid = job.get("id", "")
+            if not jid:
+                continue
+            rows.append({
+                "user_id":          user_id,
+                "job_id":           jid,
+                "topsis_score":     float(job.get("topsis_score", 0)),
+                "topsis_rank":      int(job.get("topsis_rank", 0)),
+                "dimension_scores": job.get("dimension_scores", {}),
+                "matched_keywords": job.get("matched_keywords", []),
+                "salary_inr_low":   job.get("salary_inr_low"),
+                "salary_inr_high":  job.get("salary_inr_high"),
+                "salary_note":      job.get("salary_note", ""),
+                "location_note":    job.get("location_note", ""),
+                "role_note":        job.get("role_note", ""),
+            })
+        for i in range(0, len(rows), 100):
+            supabase.table("user_matches").upsert(
+                rows[i:i+100], on_conflict="user_id,job_id"
+            ).execute()
+    except Exception as e:
+        log.error("Failed to save matches to DB for user=%s: %s", user_id, e)
+
+
+def _read_matches_from_db(supabase, user_id: str) -> list[dict]:
+    """
+    Read a user's matches from user_matches and merge with full job data.
+
+    Avoids the PostgREST embedded-join syntax (which needs a recognized FK and
+    fails silently otherwise). Instead: fetch match rows, fetch the referenced
+    jobs by id, merge in Python.
+    """
+    try:
+        matches = supabase.table("user_matches") \
+            .select("*") \
+            .eq("user_id", user_id) \
+            .order("topsis_rank") \
+            .execute().data or []
+        if not matches:
+            return []
+
+        job_ids = [m["job_id"] for m in matches if m.get("job_id")]
+        # Fetch jobs in batches (PostgREST 'in' filter can take many ids)
+        jobs_by_id = {}
+        for i in range(0, len(job_ids), 200):
+            batch = job_ids[i:i+200]
+            rows = supabase.table("jobs").select("*").in_("id", batch).execute().data or []
+            for j in rows:
+                jobs_by_id[j["id"]] = j
+
+        out = []
+        for m in matches:
+            job = jobs_by_id.get(m.get("job_id"))
+            if not job:
+                continue          # job no longer exists / was deactivated
+            out.append({
+                **job,
+                "topsis_score":     m.get("topsis_score", 0),
+                "topsis_rank":      m.get("topsis_rank", 0),
+                "dimension_scores": m.get("dimension_scores", {}),
+                "matched_keywords": m.get("matched_keywords", []),
+                "salary_inr_low":   m.get("salary_inr_low"),
+                "salary_inr_high":  m.get("salary_inr_high"),
+                "salary_note":      m.get("salary_note", ""),
+                "location_note":    m.get("location_note", ""),
+                "role_note":        m.get("role_note", ""),
+            })
+        return out
+    except Exception as e:
+        log.error("Failed to read matches from DB for user=%s: %s", user_id, e)
         return []
 
 
@@ -242,34 +378,52 @@ def _scrape_and_filter(user_id: str, profile: dict):
         # ── Step 2: Filter + rank DB jobs, show immediately ───────────────────
         _write_status(user_id, "filtering", f"Filtering {len(all_jobs)} jobs...")
         matched = filter_jobs(all_jobs, profile, min_matches=2)
+        weights = profile.get("topsis_weights")
+        ranked  = rank_jobs(matched, profile, weights=weights)
 
+        # Persist: local JSON (fallback) + DB (source of truth)
         _matched_jobs_path(user_id).write_text(
-            json.dumps(matched, indent=2, ensure_ascii=False),
-            encoding="utf-8",
+            json.dumps(ranked, indent=2, ensure_ascii=False), encoding="utf-8",
         )
+        if supabase:
+            _save_matches_to_db(supabase, user_id, ranked)
 
         # Mark ready NOW — user sees DB results immediately
-        _write_status(user_id, "ready", f"{len(matched)} jobs matched. Searching Internshala for more...")
-        log.info("user=%s phase1 done: %d matched from DB", user_id, len(matched))
+        _write_status(user_id, "ready", f"{len(ranked)} jobs matched. Searching Internshala for more...")
+        log.info("user=%s phase1 done: %d matched from DB", user_id, len(ranked))
 
         # ── Step 3: Internshala in background, then merge ─────────────────────
         internshala_keywords = (profile.get("search_keywords") or ["software engineer"])[:3]
+        internshala_jobs = []
         for kw in internshala_keywords:
             result = scrape_internshala(keyword=kw, fetch_jobs=True, fetch_internships=True)
             if result["success"] and result["jobs"]:
+                internshala_jobs.extend(result["jobs"])
                 _collect(result["jobs"], f"internshala/{kw}")
             else:
                 log.warning("internshala/%s failed: %s", kw, result.get("error"))
 
-        # Re-filter with Internshala jobs added
-        matched = filter_jobs(all_jobs, profile, min_matches=2)
-        _matched_jobs_path(user_id).write_text(
-            json.dumps(matched, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        # Only re-rank/save if Internshala actually returned new jobs
+        if internshala_jobs:
+            # Persist Internshala jobs into the jobs table so matches can reference them
+            if supabase:
+                _upsert_jobs_to_db(supabase, internshala_jobs)
 
-        _write_status(user_id, "ready", f"{len(matched)} jobs matched (incl. Internshala)")
-        log.info("user=%s phase2 done: %d total matched", user_id, len(matched))
+            matched = filter_jobs(all_jobs, profile, min_matches=2)
+            ranked  = rank_jobs(matched, profile, weights=weights)
+
+            _matched_jobs_path(user_id).write_text(
+                json.dumps(ranked, indent=2, ensure_ascii=False), encoding="utf-8",
+            )
+            if supabase:
+                _save_matches_to_db(supabase, user_id, ranked)
+
+            _write_status(user_id, "ready", f"{len(ranked)} jobs matched (incl. Internshala)")
+            log.info("user=%s phase2 done: %d total matched", user_id, len(ranked))
+        else:
+            # No Internshala results (e.g. blocked on host) — finalize phase 1 status
+            _write_status(user_id, "ready", f"{len(ranked)} jobs matched")
+            log.info("user=%s phase2 skipped: no internshala jobs", user_id)
 
     except Exception as e:
         log.exception("Pipeline failed for user=%s", user_id)
@@ -377,21 +531,30 @@ async def search_jobs(user_id: str, current_user: str = Depends(get_current_user
     if status["status"] == "failed":
         raise HTTPException(status_code=500, detail=f"Scrape failed: {status['detail']}")
 
+    # Preferred source: DB (already ranked, survives restarts, multi-instance safe)
+    supabase = _get_supabase()
+    if supabase:
+        try:
+            ranked = _read_matches_from_db(supabase, user_id)
+            if ranked:
+                return JSONResponse({
+                    "user_id": user_id,
+                    "total":   len(ranked),
+                    "jobs":    ranked,
+                })
+        except Exception as e:
+            log.error("DB read failed, falling back to local JSON: %s", e)
+
+    # Fallback: local JSON (already ranked by the pipeline)
     p = _matched_jobs_path(user_id)
     if not p.exists():
         raise HTTPException(status_code=404, detail="No matched jobs found.")
 
-    matched = json.loads(p.read_text(encoding="utf-8"))
-    profile = json.loads(Path(profile_path(user_id)).read_text(encoding="utf-8"))
-
-    weights = profile.get("topsis_weights", None)
-    ranked  = rank_jobs(matched, profile, weights=weights)
-
+    ranked = json.loads(p.read_text(encoding="utf-8"))
     return JSONResponse({
-        "user_id":      user_id,
-        "total":        len(ranked),
-        "weights_used": profile.get("topsis_weights", DEFAULT_WEIGHTS),
-        "jobs":         ranked,
+        "user_id": user_id,
+        "total":   len(ranked),
+        "jobs":    ranked,
     })
 
 

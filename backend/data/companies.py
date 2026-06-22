@@ -30,14 +30,17 @@ COMPANIES = {
         "deepmind",
         "postman",
         "imbue",
-        # Indian companies
-        "phonepe",
-        "groww",
+        # Indian + India-office companies (verified June 2026)
+        "phonepe",                          # Indian fintech, Bangalore
+        "groww",                            # Indian fintech, Bangalore
+        "razorpaysoftwareprivatelimited",   # Razorpay — Indian fintech unicorn, ~40 jobs
+        "alphasense",                       # Market intelligence, India offices (Pune/Mumbai/Blr), ~150 jobs
+        "hackerrank",                       # Indian-origin tech assessment platform, ~46 jobs
     ],
 
     # ── Lever (public JSON API) ────────────────────────────────────────────
     "lever": [
-        # Verified working (May 2026)
+        # Global (verified May 2026)
         "spotify",          # 183 jobs
         "zoox",             # 225 jobs
         "matchgroup",       # 80 jobs
@@ -48,6 +51,11 @@ COMPANIES = {
         "xsolla",           # 167 jobs
         "palantir",         # 221 jobs
         "applike",          # 58 jobs
+        # Indian companies (verified June 2026)
+        "cred",             # Indian fintech, Bangalore
+        "meesho",           # Indian e-commerce unicorn, Bangalore
+        "hevodata",         # Indian data pipeline startup, Bangalore
+        "fampay",           # Indian fintech for teens, Bangalore
     ],
 
     # ── Ashby (GraphQL API — public, no auth) ─────────────────────────────
@@ -71,6 +79,9 @@ COMPANIES = {
         "lancedb",      # 6 jobs
         "weaviate",     # 4 jobs
         "pinecone",     # 7 jobs
+        # India-office companies (verified June 2026 — re-verify job counts after first scrape)
+        "airwallex",    # Fintech, Bangalore office
+        "flagright.com", # AI fintech compliance, Bangalore
     ],
 
     # ── Workday (HTML scraping via Playwright) ─────────────────────────────
