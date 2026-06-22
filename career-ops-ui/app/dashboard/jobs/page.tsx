@@ -39,11 +39,17 @@ export default function JobsPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    let pollTimer: ReturnType<typeof setInterval> | null = null
+
     async function fetchJobs() {
       try {
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
-        const userId = user?.id || localStorage.getItem("career_ops_user_id")
+        // In demo mode, fall back to a fixed demo user that already has matched jobs.
+        const demoUser = process.env.NEXT_PUBLIC_DEMO_MODE === "true"
+          ? process.env.NEXT_PUBLIC_DEMO_USER_ID
+          : null
+        const userId = user?.id || localStorage.getItem("career_ops_user_id") || demoUser
 
         if (!userId) {
           setError("No resume uploaded yet. Upload your resume from the dashboard first.")
@@ -58,13 +64,34 @@ export default function JobsPage() {
         }
         const data = await res.json()
         setJobs(data.jobs)
+        setLoading(false)
+
+        // If Internshala still loading, poll for updated results
+        const statusRes = await apiGet(`/api/jobs/status/${userId}`)
+        const status = await statusRes.json()
+        if (status.detail?.includes("Searching Internshala") && !pollTimer) {
+          pollTimer = setInterval(async () => {
+            const r = await apiGet(`/api/jobs/search/${userId}`)
+            if (r.ok) {
+              const d = await r.json()
+              setJobs(d.jobs)
+            }
+            const s = await apiGet(`/api/jobs/status/${userId}`)
+            const sd = await s.json()
+            if (!sd.detail?.includes("Searching Internshala") && pollTimer) {
+              clearInterval(pollTimer)
+              pollTimer = null
+            }
+          }, 5000)
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Something went wrong")
-      } finally {
         setLoading(false)
       }
     }
     fetchJobs()
+
+    return () => { if (pollTimer) clearInterval(pollTimer) }
   }, [])
 
   const applied = jobs.filter((j) => j.topsis_score > 0.8).length

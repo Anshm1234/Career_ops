@@ -1,6 +1,7 @@
 # ── Secrets — NEVER commit ────────────────────────────────
 .env
 .env.local
+.env.example
 *.key
 
 # ── Python ────────────────────────────────────────────────

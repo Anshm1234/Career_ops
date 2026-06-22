@@ -18,6 +18,11 @@ const COMPANIES = [
   "Duolingo", "Coinbase", "DoorDash", "Mistral", "Replit", "Groq", "Lyft",
 ]
 
+// When true, the auth screen still renders fully, but any sign-in/sign-up
+// button press skips Supabase and lands directly on the dashboard.
+// Toggle via NEXT_PUBLIC_DEMO_MODE=true in the environment.
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true"
+
 export function AuthScreen() {
   const router = useRouter()
   const supabase = createClient()
@@ -33,6 +38,14 @@ export function AuthScreen() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+
+    // Demo bypass — skip auth entirely, go straight to dashboard.
+    if (DEMO_MODE) {
+      router.push("/dashboard")
+      router.refresh()
+      return
+    }
+
     setLoading(true)
     setError(null)
 
@@ -60,6 +73,7 @@ export function AuthScreen() {
   }
 
   async function handleGitHub() {
+    if (DEMO_MODE) { router.push("/dashboard"); router.refresh(); return }
     setLoading(true)
     setError(null)
     const { error } = await supabase.auth.signInWithOAuth({
@@ -70,6 +84,7 @@ export function AuthScreen() {
   }
 
   async function handleGoogle() {
+    if (DEMO_MODE) { router.push("/dashboard"); router.refresh(); return }
     setLoading(true)
     setError(null)
     const { error } = await supabase.auth.signInWithOAuth({
