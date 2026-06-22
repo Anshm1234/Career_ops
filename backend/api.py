@@ -337,8 +337,6 @@ def _scrape_and_filter(user_id: str, profile: dict):
     try:
         _write_status(user_id, "scraping", "Loading jobs from database...")
 
-        from tools.internshala import scrape_internshala
-
         all_jobs = []
         seen_urls = set()
 
@@ -388,42 +386,9 @@ def _scrape_and_filter(user_id: str, profile: dict):
         if supabase:
             _save_matches_to_db(supabase, user_id, ranked)
 
-        # Mark ready NOW — user sees DB results immediately
-        _write_status(user_id, "ready", f"{len(ranked)} jobs matched. Searching Internshala for more...")
-        log.info("user=%s phase1 done: %d matched from DB", user_id, len(ranked))
-
-        # ── Step 3: Internshala in background, then merge ─────────────────────
-        internshala_keywords = (profile.get("search_keywords") or ["software engineer"])[:3]
-        internshala_jobs = []
-        for kw in internshala_keywords:
-            result = scrape_internshala(keyword=kw, fetch_jobs=True, fetch_internships=True)
-            if result["success"] and result["jobs"]:
-                internshala_jobs.extend(result["jobs"])
-                _collect(result["jobs"], f"internshala/{kw}")
-            else:
-                log.warning("internshala/%s failed: %s", kw, result.get("error"))
-
-        # Only re-rank/save if Internshala actually returned new jobs
-        if internshala_jobs:
-            # Persist Internshala jobs into the jobs table so matches can reference them
-            if supabase:
-                _upsert_jobs_to_db(supabase, internshala_jobs)
-
-            matched = filter_jobs(all_jobs, profile, min_matches=2)
-            ranked  = rank_jobs(matched, profile, weights=weights)
-
-            _matched_jobs_path(user_id).write_text(
-                json.dumps(ranked, indent=2, ensure_ascii=False), encoding="utf-8",
-            )
-            if supabase:
-                _save_matches_to_db(supabase, user_id, ranked)
-
-            _write_status(user_id, "ready", f"{len(ranked)} jobs matched (incl. Internshala)")
-            log.info("user=%s phase2 done: %d total matched", user_id, len(ranked))
-        else:
-            # No Internshala results (e.g. blocked on host) — finalize phase 1 status
-            _write_status(user_id, "ready", f"{len(ranked)} jobs matched")
-            log.info("user=%s phase2 skipped: no internshala jobs", user_id)
+        # Mark ready — Internshala disabled on Render (Chromium OOM on free/hobby tier)
+        _write_status(user_id, "ready", f"{len(ranked)} jobs matched")
+        log.info("user=%s pipeline done: %d matched from DB", user_id, len(ranked))
 
     except Exception as e:
         log.exception("Pipeline failed for user=%s", user_id)
