@@ -340,32 +340,43 @@ def _scrape_and_filter(user_id: str, profile: dict):
         matched = []
 
         if supabase:
-            page_size = 1000
-            start = 0
-            while True:
-                end = start + page_size - 1
-                try:
-                    res = supabase.table("jobs").select("*") \
-                        .eq("is_active", True).range(start, end).execute()
-                    page = res.data or []
-                except Exception as e:
-                    log.error("DB page fetch failed at %d: %s", start, e)
-                    break
+                page_size = 250          # smaller pages = less resident text
+                start = 0
+                COLS = "id,title,company,url,location,description"
+                while True:
+                    end = start + page_size - 1
+                    try:
+                        res = supabase.table("jobs").select(COLS) \
+                            .eq("is_active", True).range(start, end).execute()
+                        page = res.data or []
+                    except Exception as e:
+                        log.error("DB page fetch failed at %d: %s", start, e)
+                        break
 
-                if not page:
-                    break
+                    if not page:
+                        break
 
-                # Filter THIS page immediately — keep only survivors in memory
-                page_matched = filter_jobs(page, profile, min_matches=2)
-                matched.extend(page_matched)
-                log.info("page %d-%d: %d/%d matched (total %d)",
-                         start, end, len(page_matched), len(page), len(matched))
+                    # Truncate descriptions before filtering — keywords are early in text
+                    for j in page:
+                        d = j.get("description")
+                        if d and len(d) > 2000:
+                            j["description"] = d[:2000]
 
-                if len(page) < page_size:
-                    break          # last page reached
-                start += page_size
+                    page_matched = filter_jobs(page, profile, min_matches=2)
 
-            log.info("Streaming filter done: %d matched from DB", len(matched))
+                    # Drop heavy description from matches — UI doesn't need full text
+                    for j in page_matched:
+                        j.pop("description", None)
+
+                    matched.extend(page_matched)
+                    log.info("page %d-%d: %d/%d matched (total %d)",
+                            start, end, len(page_matched), len(page), len(matched))
+
+                    if len(page) < page_size:
+                        break
+                    start += page_size
+
+                import gc; gc.collect()   # reclaim freed page memory between pipeline phases
         else:
             # Fallback: no Supabase configured — scrape directly (dev/local only)
             log.warning("Supabase not configured — falling back to direct scraping")
