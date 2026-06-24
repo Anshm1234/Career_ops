@@ -320,62 +320,77 @@ def _read_matches_from_db(supabase, user_id: str) -> list[dict]:
         log.error("Failed to read matches from DB for user=%s: %s", user_id, e)
         return []
 
-
 def _scrape_and_filter(user_id: str, profile: dict):
     """
     Runs in the background after resume upload.
 
-    New approach (DB-backed):
-    1. Fetch all jobs from Supabase jobs table (fast, ~1 sec)
-    2. Per-user Internshala scrape with profile keywords (~60 sec)
-    3. filter_jobs() + rank_jobs() against profile
-    4. Save matched results
+    Memory-safe streaming approach:
+    1. Fetch jobs from Supabase 1000 at a time (a "page")
+    2. Filter each page immediately, keep only survivors
+    3. Rank the (small) matched set
+    4. Save to DB + local JSON
 
-    Greenhouse/Lever/Ashby jobs come from the daily scrape_all.py cron job.
-    Internshala is still per-user because it needs personalised keyword search.
+    Never holds the full ~5000-job pool in memory — fixes the 512MB OOM on Render.
+    Internshala is disabled here (Chromium OOMs on free tier; handled via Apify later).
     """
     try:
         _write_status(user_id, "scraping", "Loading jobs from database...")
 
-        all_jobs = []
-        seen_urls = set()
-
-        def _collect(jobs: list, source: str):
-            added = 0
-            for job in jobs:
-                url = job.get("url", "")
-                if url and url not in seen_urls:
-                    seen_urls.add(url)
-                    all_jobs.append(job)
-                    added += 1
-            log.info("%s: added %d jobs", source, added)
-
-        # ── Step 1: Load from Supabase DB ─────────────────────────────────────
         supabase = _get_supabase()
+        matched = []
+
         if supabase:
-            db_jobs = _fetch_jobs_from_db(supabase)
-            _collect(db_jobs, "database")
-            log.info("Loaded %d jobs from Supabase", len(db_jobs))
+            page_size = 1000
+            start = 0
+            while True:
+                end = start + page_size - 1
+                try:
+                    res = supabase.table("jobs").select("*") \
+                        .eq("is_active", True).range(start, end).execute()
+                    page = res.data or []
+                except Exception as e:
+                    log.error("DB page fetch failed at %d: %s", start, e)
+                    break
+
+                if not page:
+                    break
+
+                # Filter THIS page immediately — keep only survivors in memory
+                page_matched = filter_jobs(page, profile, min_matches=2)
+                matched.extend(page_matched)
+                log.info("page %d-%d: %d/%d matched (total %d)",
+                         start, end, len(page_matched), len(page), len(matched))
+
+                if len(page) < page_size:
+                    break          # last page reached
+                start += page_size
+
+            log.info("Streaming filter done: %d matched from DB", len(matched))
         else:
+            # Fallback: no Supabase configured — scrape directly (dev/local only)
             log.warning("Supabase not configured — falling back to direct scraping")
             from data.companies import COMPANIES
             from tools.greenhouse import scrape_greenhouse
             from tools.lever import scrape_lever
             from tools.ashby import scrape_ashby
 
+            raw_jobs = []
             for slug in COMPANIES.get("greenhouse", []):
                 r = scrape_greenhouse(slug)
-                if r["success"]: _collect(r["jobs"], f"greenhouse/{slug}")
+                if r["success"]:
+                    raw_jobs.extend(r["jobs"])
             for slug in COMPANIES.get("lever", []):
                 r = scrape_lever(slug)
-                if r["success"]: _collect(r["jobs"], f"lever/{slug}")
+                if r["success"]:
+                    raw_jobs.extend(r["jobs"])
             for slug in COMPANIES.get("ashby", []):
                 r = scrape_ashby(slug)
-                if r["success"]: _collect(r["jobs"], f"ashby/{slug}")
+                if r["success"]:
+                    raw_jobs.extend(r["jobs"])
+            matched = filter_jobs(raw_jobs, profile, min_matches=2)
 
-        # ── Step 2: Filter + rank DB jobs, show immediately ───────────────────
-        _write_status(user_id, "filtering", f"Filtering {len(all_jobs)} jobs...")
-        matched = filter_jobs(all_jobs, profile, min_matches=2)
+        # ── Rank the matched set (small now — safe in memory) ─────────────────
+        _write_status(user_id, "filtering", f"Ranking {len(matched)} matched jobs...")
         weights = profile.get("topsis_weights")
         ranked  = rank_jobs(matched, profile, weights=weights)
 
@@ -386,17 +401,14 @@ def _scrape_and_filter(user_id: str, profile: dict):
         if supabase:
             _save_matches_to_db(supabase, user_id, ranked)
 
-        # Mark ready — Internshala disabled on Render (Chromium OOM on free/hobby tier)
         _write_status(user_id, "ready", f"{len(ranked)} jobs matched")
-        log.info("user=%s pipeline done: %d matched from DB", user_id, len(ranked))
+        log.info("user=%s pipeline done: %d matched", user_id, len(ranked))
 
     except Exception as e:
         log.exception("Pipeline failed for user=%s", user_id)
-        # If we already wrote ready in phase 1, don't overwrite with failed
         status = _read_status(user_id)
         if status.get("status") != "ready":
             _write_status(user_id, "failed", str(e))
-
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
