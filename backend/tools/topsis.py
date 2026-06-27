@@ -38,6 +38,30 @@ DEFAULT_WEIGHTS = {
     "seniority":0.10,
 }
 
+# ── Location scoring constants ────────────────────────────────────────────────
+
+# Job has no listed location (passed filter because user wants remote or unknown)
+LOCATION_UNKNOWN_SCORE  = 0.25
+# Job location clearly contradicts user's stated preferences
+LOCATION_MISMATCH_SCORE = 0.05
+
+_REMOTE_JOB_KEYWORDS = frozenset(("remote", "wfh", "work from home", "anywhere"))
+
+_LOCATION_ALIASES: dict[str, list[str]] = {
+    "bangalore":  ["bengaluru", "bangalore"],
+    "bengaluru":  ["bengaluru", "bangalore"],
+    "delhi":      ["delhi", "new delhi", "ncr", "gurugram", "gurgaon", "noida"],
+    "ncr":        ["delhi", "new delhi", "ncr", "gurugram", "gurgaon", "noida"],
+    "mumbai":     ["mumbai", "bombay"],
+    "hyderabad":  ["hyderabad", "secunderabad"],
+    "chennai":    ["chennai", "madras"],
+}
+
+
+def _is_remote_pref(p: str) -> bool:
+    """True if a location preference string represents a desire to work remotely."""
+    return p.startswith("remote") or p in ("wfh", "work from home", "anywhere")
+
 
 # ── Individual dimension scorers (each returns 0.0 – 1.0) ────────────────────
 
@@ -137,12 +161,21 @@ def _score_role(job: dict, profile: dict) -> float:
 
 def _score_location(job: dict, profile: dict) -> float:
     """
-    1.0  — exact preferred location match or remote match
-    0.7  — job has no location (undisclosed, possibly remote)
-    0.0  — clear mismatch
+    Score how well the job's location fits the user's stated preferences.
 
-    Location compensation: if salary is >= 1.5× user's salary_max AND
-    location doesn't match, boost to 0.6 to reflect the financial trade-off.
+    Returns:
+        1.0   — exact city match or confirmed remote match
+        0.25  — job has no listed location (LOCATION_UNKNOWN_SCORE)
+        0.05  — clear location mismatch (LOCATION_MISMATCH_SCORE)
+        0.5   — user has no location preference (neutral)
+
+    Logic mirrors job_filter._location_matches so filter and scorer agree:
+      - "open to relocation" → full score (user will go anywhere)
+      - Remote prefs (startswith "remote", "wfh", "anywhere") → match only if
+        job explicitly signals remote via _REMOTE_JOB_KEYWORDS
+      - City prefs → checked with _LOCATION_ALIASES for spelling variants
+      - No salary-based compensation — a high USD salary does not override
+        a stated India location preference
     """
     prefs = [p.lower().strip() for p in profile.get("location_preferences", [])]
     if not prefs:
@@ -152,29 +185,30 @@ def _score_location(job: dict, profile: dict) -> float:
     job_desc = (job.get("description", "") or "").lower()
     combined = f"{job_loc} {job_desc}"
 
-    matched = False
     for pref in prefs:
-        if pref in ("remote", "wfh", "work from home"):
-            if any(w in combined for w in ("remote", "wfh", "work from home", "anywhere")):
-                matched = True
-                break
-        elif pref in job_loc:
-            matched = True
-            break
+        # "Open to relocation" — user accepts any location
+        if pref == "open to relocation":
+            return 1.0
 
-    if matched:
-        return 1.0
+        # Remote preference — require explicit remote signal in the job
+        if _is_remote_pref(pref):
+            if any(w in combined for w in _REMOTE_JOB_KEYWORDS):
+                return 1.0
+            if not job_loc.strip():
+                return LOCATION_UNKNOWN_SCORE
+            continue   # this job has no remote signal; try remaining prefs
 
+        # City match with aliases
+        city_variants = _LOCATION_ALIASES.get(pref, [pref])
+        for variant in city_variants:
+            if variant in job_loc:
+                return 1.0
+
+    # No preference matched
     if not job_loc.strip():
-        return 0.7   # undisclosed — give benefit of doubt
+        return LOCATION_UNKNOWN_SCORE
 
-    # Location compensation check
-    u_max   = profile.get("salary_max")
-    job_low = job.get("salary_inr_low")
-    if u_max and job_low and job_low >= u_max * 1.5:
-        return 0.6   # salary compensates for location mismatch
-
-    return 0.0
+    return LOCATION_MISMATCH_SCORE
 
 
 def _score_seniority(job: dict, profile: dict) -> float:
@@ -261,7 +295,11 @@ def _topsis(score_matrix: list[dict], weights: dict[str, float]) -> list[float]:
     if n == 0:
         return []
     if n == 1:
-        return [1.0]
+        # Can't compute relative distances with a single job.
+        # Use the weighted sum of dimension scores as an absolute quality proxy
+        # so that a wrong-location job does not auto-score 1.0.
+        absolute = sum(score_matrix[0].get(dim, 0.0) * weights.get(dim, 0.0) for dim in dims)
+        return [round(absolute, 4)]
 
     # Step 1: vector normalisation per dimension
     norm_matrix: list[dict] = [{} for _ in range(n)]

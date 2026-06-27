@@ -8,6 +8,7 @@ Usage:
     # profile is a dict — also written to data/profile.json
 """
 
+import copy
 import json
 import logging
 from pathlib import Path
@@ -239,7 +240,7 @@ def _merge_with_defaults(gemini_profile: dict) -> dict:
     then overwrite with whatever Gemini actually found.
     Lists and dicts are replaced, not merged.
     """
-    profile = DEFAULT_PROFILE.copy()
+    profile = copy.deepcopy(DEFAULT_PROFILE)
     for key, value in gemini_profile.items():
         if key in profile:
             # Only overwrite if the value is not None (empty lists/dicts are valid)

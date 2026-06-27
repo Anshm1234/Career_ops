@@ -1,42 +1,20 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { FadeUpWords } from "@/components/animated-text"
-import { JobCardFull } from "@/components/dashboard/job-card-full"
+import { JobCardLarge, type RankedJob } from "@/components/dashboard/job-card-large"
 import { apiGet } from "@/lib/api"
 import { createClient } from "@/lib/supabase"
 import { Loader2 } from "lucide-react"
 
-interface RankedJob {
-  id: string
-  title: string
-  company: string
-  url: string
-  location: string
-  description: string
-  source: string
-  posted_at: string
-  matched_keywords: string[]
-  salary_inr_low: number | null
-  salary_inr_high: number | null
-  salary_note: string
-  location_note: string
-  role_note: string
-  topsis_score: number
-  topsis_rank: number
-  dimension_scores: {
-    skill: number
-    salary: number
-    role: number
-    location: number
-    seniority: number
-  }
-}
-
 export default function JobsPage() {
-  const [jobs, setJobs] = useState<RankedJob[]>([])
+  const PAGE_SIZE = 50
+
+  const [jobs,    setJobs]    = useState<RankedJob[]>([])
+  const [hidden,  setHidden]  = useState<Set<string>>(new Set())
+  const [shown,   setShown]   = useState(PAGE_SIZE)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [error,   setError]   = useState<string | null>(null)
 
   useEffect(() => {
     let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -45,19 +23,17 @@ export default function JobsPage() {
       try {
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
-        // In demo mode, fall back to a fixed demo user that already has matched jobs.
         const demoUser = process.env.NEXT_PUBLIC_DEMO_MODE === "true"
-          ? process.env.NEXT_PUBLIC_DEMO_USER_ID
-          : null
-        const userId = user?.id || localStorage.getItem("career_ops_user_id") || demoUser
+          ? process.env.NEXT_PUBLIC_DEMO_USER_ID : null
+        const userId = user?.id || demoUser
 
         if (!userId) {
-          setError("No resume uploaded yet. Upload your resume from the dashboard first.")
+          setError("No resume uploaded yet. Complete onboarding to see your matches.")
           setLoading(false)
           return
         }
 
-        const res = await apiGet(`/api/jobs/search/${userId}`)
+        const res  = await apiGet(`/api/jobs/search/${userId}`)
         if (!res.ok) {
           const data = await res.json()
           throw new Error(data.detail || "Failed to fetch jobs")
@@ -66,21 +42,17 @@ export default function JobsPage() {
         setJobs(data.jobs)
         setLoading(false)
 
-        // If Internshala still loading, poll for updated results
+        // Poll while Internshala phase is still running
         const statusRes = await apiGet(`/api/jobs/status/${userId}`)
-        const status = await statusRes.json()
-        if (status.detail?.includes("Searching Internshala") && !pollTimer) {
+        const status    = await statusRes.json()
+        if (status.detail?.includes("Internshala") && !pollTimer) {
           pollTimer = setInterval(async () => {
             const r = await apiGet(`/api/jobs/search/${userId}`)
-            if (r.ok) {
-              const d = await r.json()
-              setJobs(d.jobs)
-            }
-            const s = await apiGet(`/api/jobs/status/${userId}`)
+            if (r.ok) { const d = await r.json(); setJobs(d.jobs) }
+            const s  = await apiGet(`/api/jobs/status/${userId}`)
             const sd = await s.json()
-            if (!sd.detail?.includes("Searching Internshala") && pollTimer) {
-              clearInterval(pollTimer)
-              pollTimer = null
+            if (!sd.detail?.includes("Internshala") && pollTimer) {
+              clearInterval(pollTimer); pollTimer = null
             }
           }, 5000)
         }
@@ -89,38 +61,34 @@ export default function JobsPage() {
         setLoading(false)
       }
     }
-    fetchJobs()
 
+    fetchJobs()
     return () => { if (pollTimer) clearInterval(pollTimer) }
   }, [])
 
-  const applied = jobs.filter((j) => j.topsis_score > 0.8).length
-  const queued  = jobs.filter((j) => j.topsis_score > 0.6 && j.topsis_score <= 0.8).length
-  const review  = jobs.filter((j) => j.topsis_score <= 0.6).length
+  const handleHide = useCallback((id: string) => {
+    setHidden((prev) => new Set(prev).add(id))
+  }, [])
 
-  const SUMMARY = [
-    { label: "Matched roles", value: jobs.length },
-    { label: "High match",    value: applied },
-    { label: "Good match",    value: queued },
-    { label: "Low match",     value: review },
-  ]
+  const visible = jobs.filter((j) => !hidden.has(j.id))
+
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-10">
+    <div className="px-6 py-10">
       <div className="mb-8">
         <p className="mb-2 font-mono text-sm text-primary">{"// ranked by TOPSIS engine"}</p>
-        <h1 className="text-balance text-4xl font-semibold tracking-tight">
+        <h1 className="text-4xl font-semibold tracking-tight">
           <FadeUpWords text="Your top matches" />
         </h1>
-        <p className="mt-2 text-muted-foreground">
-          Sourced from 40+ portals, filtered by keyword, role, location and salary — then ranked.
+        <p className="mt-2 text-sm text-muted-foreground">
+          Sourced from Greenhouse, Lever, Ashby &amp; Internshala — filtered and ranked for you.
         </p>
       </div>
 
       {loading && (
-        <div className="flex items-center justify-center gap-3 py-24 text-muted-foreground">
+        <div className="flex items-center justify-center gap-3 py-32 text-muted-foreground">
           <Loader2 className="size-5 animate-spin" />
-          <span className="text-sm">Loading your matches...</span>
+          <span className="text-sm">Loading your matches…</span>
         </div>
       )}
 
@@ -132,30 +100,40 @@ export default function JobsPage() {
 
       {!loading && !error && (
         <>
-          <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {SUMMARY.map((s) => (
-              <div key={s.label} className="rounded-xl border border-border bg-card p-4">
-                <div className="text-2xl font-semibold tabular-nums">{s.value}</div>
-                <div className="mt-1 text-xs uppercase tracking-widest text-muted-foreground">
-                  {s.label}
-                </div>
-              </div>
-            ))}
-          </div>
 
-          {jobs.length === 0 ? (
-            <div className="rounded-xl border border-border bg-card px-6 py-12 text-center text-muted-foreground text-sm">
-              No matches found yet. Try uploading your resume again with different preferences.
+          {visible.length === 0 ? (
+            <div className="rounded-xl border border-border bg-card px-6 py-12 text-center text-sm text-muted-foreground">
+              {hidden.size > 0
+                ? `You've hidden all ${hidden.size} jobs. Refresh to reset.`
+                : "No matches yet — upload your resume in onboarding to get started."}
             </div>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2">
-              {jobs.map((job, i) => (
-                <JobCardFull key={job.id} job={job} rank={i + 1} />
-              ))}
-            </div>
+            <>
+              <div className="flex flex-col gap-3">
+                {visible.slice(0, shown).map((job) => (
+                  <JobCardLarge key={job.id} job={job} onHide={handleHide} />
+                ))}
+              </div>
+
+              {visible.length > shown && (
+                <div className="mt-6 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setShown((s) => s + PAGE_SIZE)}
+                    className="rounded-xl border border-border bg-card px-6 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                  >
+                    Load more · {visible.length - shown} remaining
+                  </button>
+                </div>
+              )}
+
+              <p className="mt-4 text-center font-mono text-xs text-muted-foreground/40">
+                Showing {Math.min(shown, visible.length)} of {visible.length} matches
+              </p>
+            </>
           )}
         </>
       )}
-    </main>
+    </div>
   )
 }

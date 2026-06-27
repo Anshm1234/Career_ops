@@ -13,8 +13,9 @@ Run:
 
 import uuid
 import json
-import shutil
 import logging
+import time
+from collections import defaultdict
 from pathlib import Path
 from datetime import datetime
 
@@ -37,17 +38,18 @@ app = FastAPI(title="Career Ops API")
 # File uploads bypass the Next.js proxy and hit here cross-origin.
 from fastapi.middleware.cors import CORSMiddleware
 
-_allowed_origins = [
-    "http://localhost:3000",
+# Explicit origin allowlist — only the real frontend + local dev.
+# Set FRONTEND_URL=https://career-ops-frontend.vercel.app on Render.
+_CORS_ORIGINS = list(filter(None, [
     os.getenv("FRONTEND_URL", ""),
-]
-# Allow all *.vercel.app preview/prod domains + localhost
+    "http://localhost:3000",
+]))
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https://.*\.vercel\.app|http://localhost:3000",
+    allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -66,68 +68,95 @@ _SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 _SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 _SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
 _jwks_cache: dict = {}
+_jwks_fetched_at: float = 0.0
+_JWKS_TTL = 86_400.0   # re-fetch JWKS once per day
 
 async def _fetch_jwks() -> list:
-    """Fetch Supabase public JWKS keys for ES256 verification."""
-    global _jwks_cache
-    if _jwks_cache:
+    """Fetch Supabase public JWKS keys for ES256 verification (cached 24 h)."""
+    global _jwks_cache, _jwks_fetched_at
+    now = time.monotonic()
+    if _jwks_cache and (now - _jwks_fetched_at) < _JWKS_TTL:
         return _jwks_cache.get("keys", [])
     url = f"{_SUPABASE_URL}/auth/v1/.well-known/jwks.json"
     async with httpx.AsyncClient() as client:
         r = await client.get(url, headers={"apikey": _SUPABASE_SERVICE_KEY}, timeout=10)
         r.raise_for_status()
         _jwks_cache = r.json()
+        _jwks_fetched_at = now
         return _jwks_cache.get("keys", [])
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> str:
     """
-    Verify Supabase JWT (ES256 or HS256) and return the user's UUID.
-    - ES256: fetches public JWKS from Supabase and verifies signature
-    - HS256: uses SUPABASE_JWT_SECRET from .env
-    - Neither configured: local dev mode (no auth)
-    - Demo mode: if no token and DEMO_USER_ID is set, allow it through
+    Verify Supabase JWT and return the user's UUID.
+
+    Algorithm is NOT read from the (unverified) token header to prevent
+    algorithm-confusion attacks.  Instead we always try ES256 via JWKS first
+    (Supabase default), then fall back to HS256 only if the ES256 attempt
+    fails and SUPABASE_JWT_SECRET is configured.
     """
     if not _SUPABASE_URL and not _SUPABASE_JWT_SECRET:
         log.warning("No Supabase config — running in unauthenticated mode")
         return "local-dev-user"
 
     if not credentials:
-        # Demo mode: allow unauthenticated access AS the demo user only.
-        demo_user = os.getenv("DEMO_USER_ID", "")
-        if demo_user:
-            return demo_user
         raise HTTPException(status_code=401, detail="Missing Authorization header")
 
     token = credentials.credentials
     try:
-        header = jwt.get_unverified_header(token)
-        alg = header.get("alg", "HS256")
-
-        if alg == "ES256":
-            # Fetch JWKS and find matching key
+        # ── ES256 via JWKS (preferred — Supabase default algorithm) ──────────
+        if _SUPABASE_URL:
             keys = await _fetch_jwks()
-            kid = header.get("kid")
-            key = next((k for k in keys if k.get("kid") == kid), None)
-            if not key and keys:
-                key = keys[0]  # fallback to first key
-            if not key:
-                raise HTTPException(status_code=401, detail="No matching JWKS key found")
-            payload = jwt.decode(token, key, algorithms=["ES256"], audience="authenticated")
-        else:
-            # HS256 fallback
-            if not _SUPABASE_JWT_SECRET:
-                raise HTTPException(status_code=401, detail="SUPABASE_JWT_SECRET not configured")
-            payload = jwt.decode(token, _SUPABASE_JWT_SECRET, algorithms=["HS256"], audience="authenticated")
+            if keys:
+                kid = jwt.get_unverified_header(token).get("kid")
+                key = next((k for k in keys if k.get("kid") == kid), keys[0])
+                try:
+                    payload = jwt.decode(token, key, algorithms=["ES256"], audience="authenticated")
+                    user_id: str = payload.get("sub", "")
+                    if not user_id:
+                        raise HTTPException(status_code=401, detail="Invalid token payload")
+                    return user_id
+                except JWTError:
+                    pass   # fall through to HS256
 
-        user_id: str = payload.get("sub")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token payload")
-        return user_id
+        # ── HS256 fallback (legacy Supabase projects with JWT secret) ─────────
+        if _SUPABASE_JWT_SECRET:
+            payload = jwt.decode(token, _SUPABASE_JWT_SECRET, algorithms=["HS256"], audience="authenticated")
+            user_id = payload.get("sub", "")
+            if not user_id:
+                raise HTTPException(status_code=401, detail="Invalid token payload")
+            return user_id
+
+        raise HTTPException(status_code=401, detail="No valid signing key configured")
 
     except JWTError as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
+
+
+# ── Upload rate limiting ──────────────────────────────────────────────────────
+# In-memory per-user timestamp log.  Resets on process restart (acceptable for
+# a single-instance Render deployment).  Raises HTTP 429 if a user exceeds the
+# limit within the rolling window.
+
+MAX_UPLOAD_BYTES   = 10 * 1024 * 1024   # 10 MB hard cap
+UPLOAD_RATE_LIMIT  = 3                   # max uploads per user per window
+UPLOAD_RATE_WINDOW = 3_600.0             # window size in seconds (1 hour)
+
+_upload_timestamps: dict[str, list[float]] = defaultdict(list)
+
+def _check_upload_rate(user_id: str) -> None:
+    now    = time.monotonic()
+    cutoff = now - UPLOAD_RATE_WINDOW
+    recent = [t for t in _upload_timestamps[user_id] if t > cutoff]
+    if len(recent) >= UPLOAD_RATE_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit: max {UPLOAD_RATE_LIMIT} uploads per hour. Please wait before uploading again.",
+            headers={"Retry-After": "3600"},
+        )
+    recent.append(now)
+    _upload_timestamps[user_id] = recent
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt"}
 
@@ -144,6 +173,30 @@ def _status_path(user_id: str) -> Path:
 
 def _matched_jobs_path(user_id: str) -> Path:
     return _user_dir(user_id) / "matched_jobs.json"
+
+
+# ── Onboarding prefs helper ───────────────────────────────────────────────────
+
+def _fetch_onboarding_prefs(supabase, user_id: str) -> dict:
+    """
+    Read preferred_locations and preferred_roles from profiles.profile_data.
+    Returns {"preferred_locations": [...], "preferred_roles": [...]} with empty
+    lists as fallback so callers can always .get() safely.
+    """
+    try:
+        row = supabase.table("profiles") \
+            .select("profile_data") \
+            .eq("user_id", user_id) \
+            .single() \
+            .execute()
+        pd = (row.data or {}).get("profile_data") or {}
+        return {
+            "preferred_locations": pd.get("preferred_locations") or [],
+            "preferred_roles":     pd.get("preferred_roles") or [],
+        }
+    except Exception as e:
+        log.warning("Could not fetch onboarding prefs for user=%s: %s", user_id, e)
+        return {"preferred_locations": [], "preferred_roles": []}
 
 
 # ── Status helpers ────────────────────────────────────────────────────────────
@@ -336,6 +389,11 @@ def _scrape_and_filter(user_id: str, profile: dict):
     try:
         _write_status(user_id, "scraping", "Loading jobs from database...")
 
+        # ── Tunable filter constants ───────────────────────────────────────────
+        # Raise to 5 if matches > ~300; lower to 3 if matches < ~50 after upload.
+        MIN_MATCHES = 4
+        TOP_N       = 100   # cap final results to the best N by TOPSIS score
+
         supabase = _get_supabase()
         matched = []
 
@@ -362,7 +420,7 @@ def _scrape_and_filter(user_id: str, profile: dict):
                         if d and len(d) > 2000:
                             j["description"] = d[:2000]
 
-                    page_matched = filter_jobs(page, profile, min_matches=2)
+                    page_matched = filter_jobs(page, profile, min_matches=MIN_MATCHES)
 
                     # Drop heavy description from matches — UI doesn't need full text
                     for j in page_matched:
@@ -398,14 +456,14 @@ def _scrape_and_filter(user_id: str, profile: dict):
                 r = scrape_ashby(slug)
                 if r["success"]:
                     raw_jobs.extend(r["jobs"])
-            matched = filter_jobs(raw_jobs, profile, min_matches=2)
+            matched = filter_jobs(raw_jobs, profile, min_matches=MIN_MATCHES)
 
         # ── Rank the matched set (small now — safe in memory) ─────────────────
         _write_status(user_id, "filtering", f"Ranking {len(matched)} matched jobs...")
         weights = profile.get("topsis_weights")
-        ranked  = rank_jobs(matched, profile, weights=weights)
+        ranked  = rank_jobs(matched, profile, weights=weights)[:TOP_N]  # best N by TOPSIS
 
-        # Persist: local JSON (fallback) + DB (source of truth)
+        # Persist: local JSON (fallback) + DB (source of truth) — both use capped list
         _matched_jobs_path(user_id).write_text(
             json.dumps(ranked, indent=2, ensure_ascii=False), encoding="utf-8",
         )
@@ -454,10 +512,23 @@ async def upload_resume(
         )
 
     user_id = current_user  # Real Supabase user ID from JWT
-    save_path = Path(UPLOADS_DIR) / f"{user_id}{suffix}"
 
+    # Rate limit: max UPLOAD_RATE_LIMIT uploads per user per hour
+    _check_upload_rate(user_id)
+
+    # Size limit: read at most MAX_UPLOAD_BYTES + 1 to detect oversized files
+    # without loading the full file into memory first.
+    contents = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum size is {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+        )
+
+    save_path = Path(UPLOADS_DIR) / f"{user_id}{suffix}"
     with open(save_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+        f.write(contents)
+    del contents   # release memory before the parser runs
 
     try:
         profile = parse_resume(str(save_path), user_id=user_id)
@@ -466,15 +537,26 @@ async def upload_resume(
     finally:
         save_path.unlink(missing_ok=True)
 
-    # Override with explicit user preferences if provided
+    # Override with explicit user preferences if provided.
+    # If location/roles were not sent by the upload dialog, fall back to the
+    # onboarding profile stored in Supabase so filtering is never pref-less.
     if salary_min is not None:
         profile["salary_min"] = salary_min
     if salary_max is not None:
         profile["salary_max"] = salary_max
+
+    supabase_for_prefs = _get_supabase()
+    onboarding = _fetch_onboarding_prefs(supabase_for_prefs, user_id) if supabase_for_prefs else {}
+
     if location_preferences:
         profile["location_preferences"] = [l.strip() for l in location_preferences.split(",") if l.strip()]
+    elif onboarding.get("preferred_locations"):
+        profile["location_preferences"] = onboarding["preferred_locations"]
+
     if preferred_roles:
         profile["preferred_roles"] = [r.strip() for r in preferred_roles.split(",") if r.strip()]
+    elif onboarding.get("preferred_roles"):
+        profile["preferred_roles"] = onboarding["preferred_roles"]
 
     # Store TOPSIS weights in profile (normalised at ranking time)
     profile["topsis_weights"] = {
@@ -556,3 +638,86 @@ async def get_profile(user_id: str, current_user: str = Depends(get_current_user
         raise HTTPException(status_code=404, detail="Profile not found.")
     profile = json.loads(Path(path).read_text(encoding="utf-8"))
     return JSONResponse({"user_id": user_id, "profile": profile})
+
+
+@app.post("/profile/{user_id}/update")
+async def update_profile(
+    user_id: str,
+    background_tasks: BackgroundTasks,
+    preferred_roles: str | None        = Form(default=None),
+    location_preferences: str | None   = Form(default=None),
+    salary_min: int | None             = Form(default=None),
+    salary_max: int | None             = Form(default=None),
+    weight_skill:     float            = Form(default=DEFAULT_WEIGHTS["skill"]),
+    weight_salary:    float            = Form(default=DEFAULT_WEIGHTS["salary"]),
+    weight_role:      float            = Form(default=DEFAULT_WEIGHTS["role"]),
+    weight_location:  float            = Form(default=DEFAULT_WEIGHTS["location"]),
+    weight_seniority: float            = Form(default=DEFAULT_WEIGHTS["seniority"]),
+    current_user: str = Depends(get_current_user),
+):
+    """
+    Update preference fields in the user's profile, then re-filter and re-rank
+    their matches against the full DB. No Gemini call, no scraping.
+    """
+    if current_user != "local-dev-user" and current_user != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    path = profile_path(user_id)
+    if not Path(path).exists():
+        raise HTTPException(status_code=404, detail="Profile not found. Upload a resume first.")
+
+    profile = json.loads(Path(path).read_text(encoding="utf-8"))
+
+    # Apply preference overrides; fall back to Supabase onboarding values when
+    # the form field is absent so re-ranking never runs pref-less.
+    supabase_for_prefs = _get_supabase()
+    onboarding = _fetch_onboarding_prefs(supabase_for_prefs, user_id) if supabase_for_prefs else {}
+
+    if preferred_roles:
+        profile["preferred_roles"] = [r.strip() for r in preferred_roles.split(",") if r.strip()]
+    elif onboarding.get("preferred_roles") and not profile.get("preferred_roles"):
+        profile["preferred_roles"] = onboarding["preferred_roles"]
+
+    if location_preferences:
+        profile["location_preferences"] = [l.strip() for l in location_preferences.split(",") if l.strip()]
+    elif onboarding.get("preferred_locations") and not profile.get("location_preferences"):
+        profile["location_preferences"] = onboarding["preferred_locations"]
+    if salary_min is not None:
+        profile["salary_min"] = salary_min
+    if salary_max is not None:
+        profile["salary_max"] = salary_max
+
+    profile["topsis_weights"] = {
+        "skill":     weight_skill,
+        "salary":    weight_salary,
+        "role":      weight_role,
+        "location":  weight_location,
+        "seniority": weight_seniority,
+    }
+
+    # Persist updated profile
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(profile, f, indent=2, ensure_ascii=False)
+
+    # Re-rank against DB in background
+    supabase = _get_supabase()
+    if not supabase:
+        return JSONResponse({"user_id": user_id, "profile": profile,
+                             "total": 0, "message": "Supabase not configured — no re-ranking."})
+
+    from tools.job_filter import filter_jobs
+    db_jobs = _fetch_jobs_from_db(supabase)
+    matched = filter_jobs(db_jobs, profile, min_matches=2)
+    ranked  = rank_jobs(matched, profile, weights=profile.get("topsis_weights"))
+
+    _matched_jobs_path(user_id).write_text(
+        json.dumps(ranked, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    _save_matches_to_db(supabase, user_id, ranked)
+
+    return JSONResponse({
+        "user_id": user_id,
+        "profile": profile,
+        "total":   len(ranked),
+        "message": f"Profile updated. {len(ranked)} jobs re-ranked.",
+    })

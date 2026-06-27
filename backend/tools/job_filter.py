@@ -18,6 +18,14 @@ from tools.salary import extract_salary_inr, salary_in_range
 
 log = logging.getLogger(__name__)
 
+# Keywords that indicate a job is genuinely remote-eligible
+_REMOTE_JOB_KEYWORDS = frozenset(("remote", "wfh", "work from home", "anywhere"))
+
+
+def _is_remote_pref(p: str) -> bool:
+    """True if a location preference string represents a desire to work remotely."""
+    return p.startswith("remote") or p in ("wfh", "work from home", "anywhere")
+
 
 def _tokenise(text: str) -> str:
     """Lowercase and collapse whitespace for consistent matching."""
@@ -33,7 +41,7 @@ def _build_terms(profile: dict) -> list[str]:
     raw = []
     raw.extend(profile.get("search_keywords", []))
     raw.extend(profile.get("preferred_roles", []))
-    raw.extend(profile.get("skills", [])[:20])  # cap skills to avoid noise
+    raw.extend(profile.get("skills", [])[:8])   # top 8 skills only — avoids generic-term noise
 
     seen = set()
     terms = []
@@ -82,9 +90,20 @@ def _job_matches(job: dict, terms: list[str], min_matches: int) -> tuple[bool, l
 def _location_matches(job: dict, location_prefs: list[str]) -> tuple[bool, str]:
     """
     Check if job location matches any of the user's preferred locations.
-    'remote' is treated specially — matches any job that mentions remote/wfh.
-    Returns (ok, note).
-    If user has no location prefs, always passes.
+    Returns (ok, note). If user has no location prefs, always passes.
+
+    Remote handling:
+      - Prefs like "Remote (India)", "Remote (Worldwide)", "wfh", "anywhere"
+        are treated as remote preferences.
+      - Remote prefs match jobs that explicitly signal remote work via keywords
+        ("remote", "wfh", "work from home", "anywhere") in location or description.
+      - "hybrid" is NOT treated as remote — a hybrid SF job is not remote-eligible
+        for an India-based user.
+      - "Open to relocation" bypasses the location filter entirely.
+
+    No-location escape hatch:
+      - Jobs with no location listed pass ONLY if the user has at least one
+        remote preference. Otherwise they are excluded.
     """
     if not location_prefs:
         return True, "no location preference set"
@@ -93,7 +112,6 @@ def _location_matches(job: dict, location_prefs: list[str]) -> tuple[bool, str]:
     job_desc     = _tokenise(job.get("description", ""))
     combined     = f"{job_location} {job_desc}"
 
-    # City aliases — common spelling variants
     _ALIASES: dict[str, list[str]] = {
         "bangalore":  ["bengaluru", "bangalore"],
         "bengaluru":  ["bengaluru", "bangalore"],
@@ -104,27 +122,35 @@ def _location_matches(job: dict, location_prefs: list[str]) -> tuple[bool, str]:
         "chennai":    ["chennai", "madras"],
     }
 
+    user_wants_remote = any(_is_remote_pref(p.lower().strip()) for p in location_prefs)
+
     for pref in location_prefs:
         p = pref.lower().strip()
 
-        # Treat anything starting with "remote" as a remote preference
-        if p.startswith("remote") or p in ("wfh", "work from home", "open to relocation", "anywhere"):
-            if any(w in combined for w in ("remote", "wfh", "work from home", "anywhere", "hybrid")):
-                return True, "remote/hybrid job matches preference"
-            # Also pass if job has no location (likely remote)
+        # "Open to relocation" — user will work anywhere; skip location filter
+        if p == "open to relocation":
+            return True, "user is open to relocation"
+
+        # Remote preference — only match jobs that explicitly say remote/wfh
+        if _is_remote_pref(p):
+            if any(w in combined for w in _REMOTE_JOB_KEYWORDS):
+                return True, "remote job matches preference"
             if not job_location.strip():
                 return True, "no location listed — assumed remote-friendly"
-            continue
+            continue   # no remote signal in this job; try remaining prefs
 
-        # Check city aliases
+        # City match (with aliases)
         city_variants = _ALIASES.get(p, [p])
         for variant in city_variants:
             if variant in job_location:
                 return True, f"location '{job_location}' matches '{pref}'"
 
-    # If job has no location at all, don't reject it
+    # No preference matched.
+    # Jobs with no location: pass only when user has a remote preference.
     if not job_location.strip():
-        return True, "no location in job — included"
+        if user_wants_remote:
+            return True, "no location listed — assumed remote-friendly"
+        return False, "no location in job — excluded (user has no remote preference)"
 
     return False, f"location '{job.get('location', '')}' not in preferences {location_prefs}"
 

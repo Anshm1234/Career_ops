@@ -41,9 +41,10 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse
   }
 
-  // Authenticated: check onboarding status for relevant routes
+  // Authenticated: check onboarding for /login and /dashboard/** only.
+  // "/" is intentionally public — everyone sees the landing page first.
   const needsOnboardingCheck =
-    pathname === "/" || pathname.startsWith("/dashboard")
+    pathname === "/login" || pathname.startsWith("/dashboard")
 
   if (needsOnboardingCheck) {
     const { data: profile } = await supabase
@@ -54,10 +55,10 @@ export async function updateSession(request: NextRequest) {
 
     const onboarded = profile?.profile_data?.onboarding_complete === true
 
-    if (pathname === "/") {
-      // After login, route to onboarding or dashboard depending on status
+    if (pathname === "/login") {
+      // Authenticated users hitting /login → bounce straight to the app
       const url = request.nextUrl.clone()
-      url.pathname = onboarded ? "/dashboard" : "/onboarding"
+      url.pathname = onboarded ? "/dashboard/jobs" : "/onboarding"
       return NextResponse.redirect(url)
     }
 

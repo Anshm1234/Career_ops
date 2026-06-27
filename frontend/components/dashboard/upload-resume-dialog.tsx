@@ -130,9 +130,6 @@ export function UploadResumeDialog({ children }: { children: React.ReactNode }) 
 
       if (!res.ok) throw new Error(data.detail || "Upload failed")
 
-      // Store real Supabase user ID so jobs page can fetch results
-      localStorage.setItem("career_ops_user_id", user.id)
-
       // Record this resume in profile_data.resumes for the profile page list
       const supabaseClient = createClient()
       supabaseClient.from("profiles").select("profile_data").eq("user_id", user.id).single()
