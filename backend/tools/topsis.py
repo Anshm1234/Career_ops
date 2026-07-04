@@ -9,12 +9,10 @@ Dimensions & default weights:
     skill_score    0.30  — how many profile keywords appear in the job
     salary_score   0.30  — how well salary fits the user's range (INR)
     role_score     0.20  — job title alignment with preferred roles
-    location_score 0.10  — location / remote preference match
+    location_score 0.10  — binary: 1.0 if job location matches a stated
+                           preference (or is blank/remote-matched), else 0.0;
+                           0.5 when the user set no location preference
     seniority_score 0.10 — experience years match
-
-Special rule (location compensation):
-    If location doesn't match but salary is significantly higher than the
-    user's max (>= 1.5x), location_score is boosted to reflect the trade-off.
 
 Usage:
     from tools.topsis import rank_jobs
@@ -39,11 +37,6 @@ DEFAULT_WEIGHTS = {
 }
 
 # ── Location scoring constants ────────────────────────────────────────────────
-
-# Job has no listed location (passed filter because user wants remote or unknown)
-LOCATION_UNKNOWN_SCORE  = 0.25
-# Job location clearly contradicts user's stated preferences
-LOCATION_MISMATCH_SCORE = 0.05
 
 _REMOTE_JOB_KEYWORDS = frozenset(("remote", "wfh", "work from home", "anywhere"))
 
@@ -161,12 +154,13 @@ def _score_role(job: dict, profile: dict) -> float:
 
 def _score_location(job: dict, profile: dict) -> float:
     """
-    Score how well the job's location fits the user's stated preferences.
+    Binary location fit: 1.0 if the job location matches a stated preference,
+    0.0 otherwise.
 
     Returns:
-        1.0   — exact city match or confirmed remote match
-        0.25  — job has no listed location (LOCATION_UNKNOWN_SCORE)
-        0.05  — clear location mismatch (LOCATION_MISMATCH_SCORE)
+        1.0   — exact city match, confirmed remote match, or job has no listed
+                location (blank → given the benefit of the doubt)
+        0.0   — clear location mismatch
         0.5   — user has no location preference (neutral)
 
     Logic mirrors job_filter._location_matches so filter and scorer agree:
@@ -185,6 +179,10 @@ def _score_location(job: dict, profile: dict) -> float:
     job_desc = (job.get("description", "") or "").lower()
     combined = f"{job_loc} {job_desc}"
 
+    # Blank job location — treat as acceptable (often remote / unspecified)
+    if not job_loc.strip():
+        return 1.0
+
     for pref in prefs:
         # "Open to relocation" — user accepts any location
         if pref == "open to relocation":
@@ -194,8 +192,6 @@ def _score_location(job: dict, profile: dict) -> float:
         if _is_remote_pref(pref):
             if any(w in combined for w in _REMOTE_JOB_KEYWORDS):
                 return 1.0
-            if not job_loc.strip():
-                return LOCATION_UNKNOWN_SCORE
             continue   # this job has no remote signal; try remaining prefs
 
         # City match with aliases
@@ -205,10 +201,7 @@ def _score_location(job: dict, profile: dict) -> float:
                 return 1.0
 
     # No preference matched
-    if not job_loc.strip():
-        return LOCATION_UNKNOWN_SCORE
-
-    return LOCATION_MISMATCH_SCORE
+    return 0.0
 
 
 def _score_seniority(job: dict, profile: dict) -> float:
