@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { MapPin, ExternalLink, Bookmark, BookmarkCheck, EyeOff, Clock, Building2 } from "lucide-react"
+import { MapPin, ExternalLink, Bookmark, BookmarkCheck, EyeOff, Clock, Building2, FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export interface RankedJob {
@@ -169,6 +169,16 @@ export function JobCardLarge({
             className="flex size-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
           >
             <EyeOff className="size-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/jobs/${job.id}?tailor=1`) }}
+            aria-label="Tailor resume for this job"
+            className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            <FileText className="size-3" />
+            Tailor
           </button>
 
           <a

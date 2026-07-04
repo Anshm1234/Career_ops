@@ -127,10 +127,11 @@ def extract_text(path: str) -> str:
 # ── Gemini extraction ─────────────────────────────────────────────────────────
 
 _SYSTEM_PROMPT = """\
-You are a resume parser. Extract structured information from the resume text below.
-Return ONLY a valid JSON object — no markdown, no backticks, no explanation.
+You are a resume parser and LaTeX typesetter. From the resume text, do two things in one response:
+1. Extract structured profile data as JSON.
+2. Produce a complete, compilable LaTeX resume document.
 
-The JSON must use exactly these keys (use null for missing values, [] for empty lists):
+Return ONLY a valid JSON object with exactly these keys. No markdown, no backticks, no explanation.
 
 {
   "name": string or null,
@@ -153,12 +154,13 @@ The JSON must use exactly these keys (use null for missing values, [] for empty 
   "salary_max": number or null,
   "location_preferences": [list of location preference strings],
   "total_experience_years": number or null,
-  "search_keywords": [top 8-12 keywords for job search APIs, derived from skills + roles]
+  "search_keywords": [top 8-12 keywords for job search APIs, derived from skills + roles],
+  "latex": string (a complete compilable LaTeX document — see LATEX RULES below)
 }
 
-Rules:
+PROFILE EXTRACTION RULES:
 - For experience_years, infer years per technology from job dates + project mentions.
-  If someone worked 2018-2021 as a Python developer, that's 3 years of Python.
+  If someone worked 2018-2021 as a Python developer, that is 3 years of Python.
 - For projects, include only substantial ones (not trivial examples).
 - search_keywords must be specific and job-searchable: "python", "machine learning",
   "backend engineer" — not generic words like "software" or "developer".
@@ -168,6 +170,28 @@ Rules:
   e.g. write Grad-CAM not "Grad-CAM", write CNN not "CNN".
 - For skills: include skills explicitly mentioned AND obvious ones clearly demonstrated
   by projects or job responsibilities (e.g. if they built REST APIs, include REST API).
+
+LATEX RULES:
+- The "latex" value must be a single JSON string containing a complete, compilable LaTeX document.
+- Use ONLY these packages (no others — the compile service may not have additional ones):
+  geometry, titlesec, enumitem, hyperref, parskip, fontenc, inputenc
+- Do NOT use fontawesome, fontawesome5, marvosym, pifont, or any icon/symbol package.
+- Set hyperref to monochrome: colorlinks=false, so links have no colour.
+- Template structure — use exactly this order:
+  \\documentclass[11pt,a4paper]{article}
+  (package declarations, geometry with 0.8in margins, titlesec formatting, parskip)
+  \\begin{document}
+  Header: candidate name in Large+bold, then a single contact line using plain text:
+    Email | Phone | Location  (and LinkedIn/GitHub if present in the resume)
+    Use plain text labels — NO icon packages.
+  Sections in this order (omit any section with no content):
+    Summary (only if the resume has one), Education, Technical Skills,
+    Experience, Projects, Certifications/Achievements
+  \\end{document}
+- Use \\noindent\\rule{\\linewidth}{0.4pt} after each section heading as a divider.
+- Style: clean, single-column, monochrome, ATS-friendly. No colours, no tables for layout.
+- Content: include ONLY information present in the resume. No placeholders, no invented entries.
+- Dates, job titles, company names, project names must match the resume exactly.
 """
 
 _USER_TEMPLATE = """\
@@ -176,7 +200,7 @@ Resume text:
 {resume_text}
 ---
 
-Return the JSON profile now.
+Return the JSON object now.
 """
 
 
@@ -205,15 +229,20 @@ def _repair_json(raw: str) -> dict:
     raise ValueError("Could not repair JSON")
 
 
-def _call_gemini(resume_text: str) -> dict:
-    """Send resume text to Gemini, get back a parsed profile dict."""
+def _call_gemini(resume_text: str) -> tuple[dict, str]:
+    """
+    Send resume text to Gemini. Returns (profile_dict, latex_str).
+    latex_str is empty string if Gemini omitted it or it failed to parse —
+    the caller must treat a missing latex as non-fatal.
+    """
     model = genai.GenerativeModel(
         model_name=GEMINI_MODEL,
         system_instruction=_SYSTEM_PROMPT,
         generation_config={"response_mime_type": "application/json"},
     )
 
-    # Truncate resume text if extremely long (>8000 chars) to stay within token limits
+    # Truncate resume text if extremely long (>8000 chars) to stay within token limits.
+    # LaTeX is generated from the same truncated text — still covers all real resumes.
     truncated = resume_text[:8000]
     if len(resume_text) > 8000:
         log.warning("Resume text truncated from %d to 8000 chars for Gemini.", len(resume_text))
@@ -222,14 +251,24 @@ def _call_gemini(resume_text: str) -> dict:
     raw = response.text.strip()
 
     try:
-        return json.loads(raw)
+        data = json.loads(raw)
     except json.JSONDecodeError as e:
         log.warning("Gemini JSON malformed (%s) — attempting repair...", e)
         try:
-            return _repair_json(raw)
+            data = _repair_json(raw)
         except ValueError:
             log.error("Could not repair Gemini JSON:\n%s", raw)
             raise ValueError(f"Gemini did not return valid JSON: {e}\nRaw output:\n{raw[:500]}")
+
+    # Extract latex separately so a missing/malformed latex never raises here.
+    latex = ""
+    raw_latex = data.pop("latex", None)
+    if isinstance(raw_latex, str) and raw_latex.strip():
+        latex = raw_latex.strip()
+    elif raw_latex is not None:
+        log.warning("Gemini returned a non-string or empty 'latex' field — skipping.")
+
+    return data, latex
 
 
 # ── Merge with default template ───────────────────────────────────────────────
@@ -251,30 +290,52 @@ def _merge_with_defaults(gemini_profile: dict) -> dict:
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
+def _store_latex_in_supabase(user_id: str, latex: str) -> None:
+    """
+    Upsert the base LaTeX resume into profiles.resume_latex.
+    Deliberately swallows all exceptions — LaTeX storage is additive and
+    must never break the upload pipeline if Supabase is unavailable.
+    """
+    try:
+        from supabase import create_client
+        import os
+        url = os.getenv("SUPABASE_URL", "")
+        key = os.getenv("SUPABASE_SERVICE_KEY", "")
+        if not url or not key:
+            log.warning("Supabase env vars not set — skipping LaTeX storage.")
+            return
+        sb = create_client(url, key)
+        sb.table("profiles").upsert(
+            {"user_id": user_id, "resume_latex": latex},
+            on_conflict="user_id",
+        ).execute()
+        log.info("Stored base LaTeX for user=%s (%d chars)", user_id, len(latex))
+    except Exception as e:
+        log.warning("Could not store LaTeX in Supabase for user=%s: %s", user_id, e)
+
+
 def parse_resume(resume_path: str, user_id: str) -> dict:
     """
     Parse a resume file and return a structured profile dict.
 
     Steps:
       1. Extract plain text from PDF or DOCX.
-      2. Send to Gemini with a tight JSON-only prompt.
-      3. Merge result with the default template (ensures all keys exist).
-      4. Save to data/profile.json.
-
-    Args:
-        resume_path: Path to the resume file (PDF, DOCX, or TXT).
+      2. Send to Gemini — ONE call that returns both profile JSON and base LaTeX.
+      3. Merge profile with the default template (ensures all keys exist).
+      4. Save profile to data/profile.json.
+      5. Store base LaTeX in Supabase profiles.resume_latex (non-fatal if it fails).
 
     Returns:
         Profile dict with all DEFAULT_PROFILE keys guaranteed to exist.
     """
     resume_path = str(resume_path)
     log.info("Parsing resume: %s", resume_path)
-    print(f"  → Extracting text from {Path(resume_path).name}...")
+    print(f"  Extracting text from {Path(resume_path).name}...")
 
     # Step 1: Extract text
     raw_text = extract_text(resume_path)
     char_count = len(raw_text)
-    print(f"  → Extracted {char_count:,} characters of text.")
+    print(f"  Extracted {char_count:,} characters of text.")
 
     if char_count < 100:
         raise ValueError(
@@ -282,14 +343,14 @@ def parse_resume(resume_path: str, user_id: str) -> dict:
             "Check that the file is not blank or image-only."
         )
 
-    # Step 2: Gemini parse
-    print("  → Sending to Gemini for structured extraction (1 API call)...")
-    gemini_profile = _call_gemini(raw_text)
+    # Step 2: Gemini parse (profile + LaTeX in one call)
+    print("  Sending to Gemini for structured extraction + LaTeX generation (1 API call)...")
+    gemini_profile, latex = _call_gemini(raw_text)
 
     # Step 3: Merge with defaults
     profile = _merge_with_defaults(gemini_profile)
 
-    # Step 4: Save
+    # Step 4: Save profile
     out_path = profile_path(user_id)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(profile, f, indent=2, ensure_ascii=False)
@@ -297,10 +358,19 @@ def parse_resume(resume_path: str, user_id: str) -> dict:
     name_str = profile.get("name") or "Unknown"
     skills_count = len(profile.get("skills", []))
     keywords_count = len(profile.get("search_keywords", []))
-    print(f"  ✓ Profile built for: {name_str}")
+    print(f"  Profile built for: {name_str}")
     print(f"    Skills found    : {skills_count}")
     print(f"    Search keywords : {keywords_count}")
     print(f"    Saved to        : {out_path}")
+
+    # Step 5: Store LaTeX (non-fatal — never let this break the upload)
+    if latex:
+        print(f"  Storing base LaTeX ({len(latex):,} chars) in Supabase...")
+        _store_latex_in_supabase(user_id, latex)
+        print("  LaTeX stored.")
+    else:
+        log.warning("Gemini returned no LaTeX for user=%s — skipping storage.", user_id)
+        print("  Warning: Gemini returned no LaTeX — resume tailoring will be unavailable until next upload.")
 
     log.info("Profile saved: %s", out_path)
     return profile

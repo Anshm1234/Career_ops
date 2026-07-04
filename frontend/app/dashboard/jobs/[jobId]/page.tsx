@@ -1,12 +1,13 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useEffect, useState, useCallback } from "react"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import {
   ArrowLeft, ExternalLink, MapPin, Building2,
   Clock, Bookmark, BookmarkCheck, AlertCircle,
+  FileText, Download, Loader2, ChevronDown, ChevronUp,
 } from "lucide-react"
-import { apiGet } from "@/lib/api"
+import { apiGet, apiPost } from "@/lib/api"
 import { createClient } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 import type { RankedJob } from "@/components/dashboard/job-card-large"
@@ -89,14 +90,26 @@ function CompanyAvatar({ name, size = "md" }: { name: string; size?: "md" | "lg"
 
 /* ─── page ────────────────────────────────────────────────────────────────── */
 
-export default function JobDetailPage() {
-  const params = useParams<{ jobId: string }>()
-  const router = useRouter()
+type TailorState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "done"; latex: string; gaps: string[]; disclaimer: string }
+  | { status: "error"; message: string }
+  | { status: "limited" }
 
-  const [job,     setJob]   = useState<RankedJob | null>(null)
+export default function JobDetailPage() {
+  const params       = useParams<{ jobId: string }>()
+  const router       = useRouter()
+  const searchParams = useSearchParams()
+
+  const [job,     setJob]     = useState<RankedJob | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
   const [saved,   setSaved]   = useState(false)
+
+  const [tailor,      setTailor]      = useState<TailorState>({ status: "idle" })
+  const [compiling,   setCompiling]   = useState(false)
+  const [showLatex,   setShowLatex]   = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -122,6 +135,72 @@ export default function JobDetailPage() {
     }
     load()
   }, [params.jobId])
+
+  const handleTailor = useCallback(async () => {
+    setTailor({ status: "loading" })
+    try {
+      const res = await apiPost("/api/resume/tailor", { job_id: params.jobId })
+      if (res.status === 429) {
+        setTailor({ status: "limited" })
+        return
+      }
+      if (!res.ok) {
+        const d = await res.json()
+        setTailor({ status: "error", message: d.detail || "Tailoring failed." })
+        return
+      }
+      const d = await res.json()
+      setTailor({
+        status: "done",
+        latex: d.tailored_latex,
+        gaps: d.gaps ?? [],
+        disclaimer: d.disclaimer ?? "",
+      })
+    } catch {
+      setTailor({ status: "error", message: "Network error — please try again." })
+    }
+  }, [params.jobId])
+
+  // Auto-trigger if navigated from card with ?tailor=1
+  useEffect(() => {
+    if (searchParams.get("tailor") === "1" && tailor.status === "idle" && job) {
+      handleTailor()
+    }
+  }, [job, searchParams, tailor.status, handleTailor])
+
+  const handleCompile = useCallback(async (latex: string) => {
+    setCompiling(true)
+    try {
+      const res = await apiPost("/api/resume/compile", { latex })
+      if (res.ok) {
+        const blob = await res.blob()
+        const url  = URL.createObjectURL(blob)
+        const a    = document.createElement("a")
+        a.href     = url
+        a.download = "resume_tailored.pdf"
+        a.click()
+        URL.revokeObjectURL(url)
+      } else {
+        // Compile failed — fall through to .tex download
+        const d = await res.json()
+        alert(d.detail + "\n\nUse the Download .tex button to get the file and compile on Overleaf.")
+      }
+    } catch {
+      alert("PDF compile unavailable. Use the Download .tex button instead.")
+    } finally {
+      setCompiling(false)
+    }
+  }, [])
+
+  const downloadTex = useCallback((latex: string) => {
+    const blob = new Blob([latex], { type: "text/plain" })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement("a")
+    a.href     = url
+    a.download = "resume_tailored.tex"
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [])
 
   if (loading) {
     return (
@@ -211,6 +290,106 @@ export default function JobDetailPage() {
             </div>
           )}
 
+          {/* Tailor result panel */}
+          {tailor.status !== "idle" && (
+            <div className="mb-8">
+              <p className="mb-3 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                Tailored resume
+              </p>
+
+              {tailor.status === "loading" && (
+                <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-6 py-8 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin shrink-0" />
+                  <span>Aligning resume to job description — this takes 15–30 seconds…</span>
+                </div>
+              )}
+
+              {tailor.status === "limited" && (
+                <div className="rounded-xl border border-border bg-card px-6 py-5 text-sm text-muted-foreground">
+                  Daily tailoring limit reached (3/day). Come back tomorrow.
+                </div>
+              )}
+
+              {tailor.status === "error" && (
+                <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-5 py-4 text-sm text-destructive">
+                  <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                  {tailor.message}
+                </div>
+              )}
+
+              {tailor.status === "done" && (
+                <div className="flex flex-col gap-4">
+                  {/* Download actions */}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => tailor.status === "done" && handleCompile(tailor.latex)}
+                      disabled={compiling}
+                      className="flex items-center gap-1.5 rounded-lg bg-foreground px-4 py-2 text-xs font-medium text-background transition-opacity hover:opacity-80 disabled:opacity-50"
+                    >
+                      {compiling
+                        ? <><Loader2 className="size-3.5 animate-spin" /> Compiling PDF…</>
+                        : <><Download className="size-3.5" /> Download PDF</>}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => tailor.status === "done" && downloadTex(tailor.latex)}
+                      className="flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                    >
+                      <Download className="size-3.5" /> Download .tex
+                    </button>
+                    <a
+                      href="https://www.overleaf.com/project"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 rounded-lg border border-dashed border-border px-4 py-2 text-xs text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+                    >
+                      <ExternalLink className="size-3" /> Open in Overleaf
+                    </a>
+                  </div>
+
+                  {/* Gaps list */}
+                  {tailor.gaps.length > 0 && (
+                    <div className="rounded-xl border border-border bg-secondary/40 px-5 py-4">
+                      <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                        Gaps — requirements not in your resume
+                      </p>
+                      <ul className="space-y-1">
+                        {tailor.gaps.map((g, i) => (
+                          <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
+                            <span className="mt-0.5 shrink-0 font-mono text-muted-foreground/40">–</span>
+                            {g}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Disclaimer */}
+                  <div className="flex items-start gap-2 rounded-xl border border-dashed border-border px-4 py-3">
+                    <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/50" />
+                    <p className="text-xs text-muted-foreground">{tailor.disclaimer}</p>
+                  </div>
+
+                  {/* LaTeX preview toggle */}
+                  <button
+                    type="button"
+                    onClick={() => setShowLatex(s => !s)}
+                    className="flex items-center gap-1.5 self-start font-mono text-[10px] uppercase tracking-widest text-muted-foreground/50 transition-colors hover:text-muted-foreground"
+                  >
+                    {showLatex ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+                    {showLatex ? "Hide" : "Preview"} LaTeX source
+                  </button>
+                  {showLatex && (
+                    <pre className="max-h-80 overflow-y-auto rounded-xl border border-border bg-secondary/30 p-4 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap">
+                      {tailor.latex}
+                    </pre>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Description */}
           <div>
             <div className="mb-4 flex items-center justify-between">
@@ -291,11 +470,20 @@ export default function JobDetailPage() {
                 {saved ? <BookmarkCheck className="size-4" /> : <Bookmark className="size-4" />}
                 {saved ? "Saved" : "Save job"}
               </button>
-              <div className="flex items-center justify-center rounded-xl border border-dashed border-border py-2.5">
-                <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground/40">
-                  Tailor resume — coming soon
-                </span>
-              </div>
+              <button
+                type="button"
+                onClick={handleTailor}
+                disabled={tailor.status === "loading" || tailor.status === "limited"}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-xl border border-border py-2.5 text-sm transition-colors hover:bg-secondary",
+                  tailor.status === "loading" && "cursor-wait opacity-60",
+                  tailor.status === "limited" && "cursor-not-allowed opacity-40",
+                )}
+              >
+                {tailor.status === "loading"
+                  ? <><Loader2 className="size-4 animate-spin" /> Tailoring…</>
+                  : <><FileText className="size-4" /> Tailor resume</>}
+              </button>
             </div>
 
             {/* TOPSIS breakdown */}
