@@ -38,18 +38,21 @@ app = FastAPI(title="Career Ops API")
 # File uploads bypass the Next.js proxy and hit here cross-origin.
 from fastapi.middleware.cors import CORSMiddleware
 
-# Explicit origin allowlist — only the real frontend + local dev.
-# Set FRONTEND_URL=https://career-ops-frontend.vercel.app on Render.
-_CORS_ORIGINS = list(filter(None, [
+# Explicit origin allowlist — frontend Vercel URL + local dev.
+# FRONTEND_URL env var on Render should be set, but the production URL is also
+# hardcoded as a fallback so uploads never 400 if the var is missing.
+_CORS_ORIGINS = list(dict.fromkeys(filter(None, [
     os.getenv("FRONTEND_URL", ""),
+    "https://career-ops-frontend.vercel.app",
     "http://localhost:3000",
-]))
+])))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin",
+                   "X-Requested-With"],
 )
 
 
