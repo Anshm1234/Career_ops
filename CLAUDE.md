@@ -89,16 +89,25 @@ profiles: id (uuid PK), user_id (FK auth.users, UNIQUE), profile_data (jsonb), u
 Roles + location fields pre-filled from `profiles.profile_data` when dialog opens.
 After successful upload: appends `{name, uploaded_at}` to `profile_data.resumes[]`.
 
-## Current state (June 2026)
+## Current state (July 2026 — concluding)
 **DONE:** monorepo restructure, Render + Vercel deployment, onboarding wizard, real profile page,
 upload dialog pre-fill, Indian company slugs (+9), DB match helpers, filter fixes (city aliases,
 remote prefix, role slash-split), Internshala disabled on Render (OOM), Gemini key rotated.
 
-**IN PROGRESS (Step 2):** Top-nav still shows hardcoded "AL" — needs real Supabase user name.
-Profile page edit saves to Supabase but doesn't call backend re-rank endpoint yet.
+**ALSO DONE (July 2026):** resume tailoring (LaTeX + PDF compile, 3/day limit), tracker
+persisted to `applications` table, Save-job button wired to tracker, rate limiting
+(upload 3/hr + tailor 3/day, in-memory), backend demo bypass removed, real user name in
+sidebar, salary/seniority parser fixes, auth hardening (`/auth/confirm` token-hash route,
+dead-session → forced re-login + sb-* cookie cleanup), daily scrape via GitHub Actions
+(`.github/workflows/daily-scrape.yml`), `career-ops-ui/` untracked from git.
 
-**PENDING:** Step 3 (rate limiting + remove demo bypass), tracker→applications persistence,
-resume tailoring, auto-apply, Internshala via Apify (planned), tests.
+**MANUAL STEPS PENDING (dashboards, not code):**
+- GitHub repo secrets for scrape workflow: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`
+- Supabase "Confirm signup" email template → `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=signup`
+- Supabase Auth: enable CAPTCHA, tighten sign-in rate limits, password min length ≥10
+
+**PENDING (future):** README (Ansh writing it himself), pytest suite, auto-apply,
+Internshala via Apify.
 
 ## Hard rules (do NOT reverse)
 - TOPSIS for ranking, NOT per-job LLM scoring.

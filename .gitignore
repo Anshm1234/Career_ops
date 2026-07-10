@@ -25,6 +25,7 @@ backend/logs/
 frontend/.next/
 frontend/node_modules/
 frontend/out/
+*.tsbuildinfo
 
 # ── Old dev folders (not part of monorepo) ────────────────
 career-ops-ui/
