@@ -7,9 +7,9 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'Career Ops — Autonomous Job Application Agent',
+  title: 'Career Ops — AI Job Discovery Agent',
   description:
-    'Drop your resume. Career Ops scrapes 40+ company portals, ranks the best matches, tailors your resume, and applies for you.',
+    'Drop your resume. Career Ops scrapes 50+ company portals, ranks the best matches, tailors your resume per job, and tracks your applications.',
   generator: 'v0.app',
   icons: {
     icon: [

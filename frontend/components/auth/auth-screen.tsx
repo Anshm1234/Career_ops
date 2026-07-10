@@ -140,13 +140,13 @@ export function AuthScreen() {
             <br />
             We&apos;ll handle the{" "}
             <RotatingWords
-              words={["scraping.", "ranking.", "tailoring.", "applying."]}
+              words={["scraping.", "ranking.", "tailoring.", "tracking."]}
               className="text-primary"
             />
           </h1>
           <p className="mt-6 max-w-md text-pretty leading-relaxed text-muted-foreground">
-            Career Ops scans 40+ company portals, scores every listing with a custom ranking engine,
-            and auto-applies on your behalf.
+            Career Ops scans 50+ company portals, scores every listing with a custom ranking engine,
+            and tailors your resume to each job you pick.
           </p>
         </div>
         <div className="relative z-10">

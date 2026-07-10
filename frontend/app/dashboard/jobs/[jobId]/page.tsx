@@ -105,7 +105,9 @@ export default function JobDetailPage() {
   const [job,     setJob]     = useState<RankedJob | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
-  const [saved,   setSaved]   = useState(false)
+  const [saved,      setSaved]      = useState(false)
+  const [savedRowId, setSavedRowId] = useState<string | null>(null)
+  const [saving,     setSaving]     = useState(false)
 
   const [tailor,      setTailor]      = useState<TailorState>({ status: "idle" })
   const [compiling,   setCompiling]   = useState(false)
@@ -127,6 +129,20 @@ export default function JobDetailPage() {
         const found = (data.jobs as RankedJob[]).find(j => j.id === params.jobId)
         if (!found) { setError("Job not found in your matches."); setLoading(false); return }
         setJob(found)
+
+        // Restore saved state — is this job already in the tracker?
+        if (user) {
+          const { data: rows } = await supabase
+            .from("applications")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("job_id", params.jobId)
+            .limit(1)
+          if (rows && rows.length > 0) {
+            setSaved(true)
+            setSavedRowId(rows[0].id)
+          }
+        }
         setLoading(false)
       } catch (err) {
         setError(err instanceof Error ? err.message : "Something went wrong")
@@ -135,6 +151,50 @@ export default function JobDetailPage() {
     }
     load()
   }, [params.jobId])
+
+  // Save/unsave — persists to the applications table (status "saved") so the
+  // job shows up in the Tracker; unsaving removes the row.
+  const handleToggleSave = useCallback(async () => {
+    if (!job || saving) return
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return   // demo mode / no session — nothing to persist
+
+    setSaving(true)
+    try {
+      if (saved && savedRowId) {
+        setSaved(false)
+        await supabase
+          .from("applications")
+          .delete()
+          .eq("id", savedRowId)
+          .eq("user_id", user.id)
+        setSavedRowId(null)
+      } else {
+        setSaved(true)   // optimistic
+        const { data, error } = await supabase
+          .from("applications")
+          .insert({
+            user_id:      user.id,
+            job_id:       job.id,
+            company:      job.company,
+            role:         job.title,
+            url:          job.url,
+            source:       job.source ?? null,
+            topsis_score: job.topsis_score ?? null,
+            topsis_rank:  job.topsis_rank ?? null,
+            status:       "saved",
+            applied_at:   new Date().toISOString(),
+          })
+          .select("id")
+          .single()
+        if (error) setSaved(false)   // roll back optimistic state
+        else       setSavedRowId(data.id)
+      }
+    } finally {
+      setSaving(false)
+    }
+  }, [job, saved, savedRowId, saving])
 
   const handleTailor = useCallback(async () => {
     setTailor({ status: "loading" })
@@ -461,14 +521,15 @@ export default function JobDetailPage() {
               </a>
               <button
                 type="button"
-                onClick={() => setSaved(s => !s)}
+                onClick={handleToggleSave}
+                disabled={saving}
                 className={cn(
-                  "flex items-center justify-center gap-2 rounded-xl border border-border py-2.5 text-sm transition-colors hover:bg-secondary",
+                  "flex items-center justify-center gap-2 rounded-xl border border-border py-2.5 text-sm transition-colors hover:bg-secondary disabled:opacity-60",
                   saved && "border-primary/40 bg-primary/5 text-primary",
                 )}
               >
                 {saved ? <BookmarkCheck className="size-4" /> : <Bookmark className="size-4" />}
-                {saved ? "Saved" : "Save job"}
+                {saved ? "Saved to tracker" : "Save job"}
               </button>
               <button
                 type="button"
