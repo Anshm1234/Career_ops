@@ -1,0 +1,42 @@
+name: Daily job scrape
+
+# Scrapes all Greenhouse/Lever/Ashby companies and upserts into the Supabase
+# jobs table. Without this, the jobs DB decays — dead links accumulate and
+# new postings never appear.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_URL          — https://ojbbvbtzpvzejnutbbcm.supabase.co
+#   SUPABASE_SERVICE_KEY  — service role key (NOT the anon key)
+
+on:
+  schedule:
+    - cron: "30 20 * * *"   # 20:30 UTC = 02:00 IST daily
+  workflow_dispatch: {}      # manual "Run workflow" button
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Only what scrape_all.py needs — the ATS scrapers are plain HTTP
+      # (requests), no Playwright/Gemini required for scraping.
+      - name: Install dependencies
+        run: pip install requests supabase python-dotenv
+
+      - name: Run scraper
+        working-directory: backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          # config.py hard-requires these at import; scraping never calls
+          # Gemini, so a placeholder is fine (do NOT put a real key here).
+          GEMINI_API_KEY: unused-in-scrape-ci
+          GEMINI_MODEL: gemini-2.5-flash-lite
+        run: python scrape_all.py
