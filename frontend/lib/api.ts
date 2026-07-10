@@ -34,19 +34,39 @@ function resolveUrl(path: string, direct: boolean): string {
   return path
 }
 
+/**
+ * Backend said the JWT is dead (expired/revoked/invalid). Kill the stale
+ * client session and force a fresh sign-in, instead of letting every
+ * subsequent request silently fail.
+ */
+async function handleUnauthorized(res: Response): Promise<Response> {
+  if (
+    res.status === 401 &&
+    typeof window !== "undefined" &&
+    process.env.NEXT_PUBLIC_DEMO_MODE !== "true"
+  ) {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    window.location.href = "/login?error=session_expired"
+  }
+  return res
+}
+
 export async function apiPost(path: string, body: FormData | object): Promise<Response> {
   const headers = await getAuthHeader()
   const isFormData = body instanceof FormData
   // File uploads go direct to backend to avoid Vercel multipart mangling
   const url = resolveUrl(path, isFormData)
-  return fetch(url, {
+  const res = await fetch(url, {
     method: "POST",
     headers: isFormData ? headers : { ...headers, "Content-Type": "application/json" },
     body: isFormData ? body : JSON.stringify(body),
   })
+  return handleUnauthorized(res)
 }
 
 export async function apiGet(path: string): Promise<Response> {
   const headers = await getAuthHeader()
-  return fetch(path, { headers })
+  const res = await fetch(path, { headers })
+  return handleUnauthorized(res)
 }

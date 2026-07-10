@@ -28,15 +28,31 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
+  // getUser() validates the JWT against the Supabase Auth server (not just
+  // the cookie) and auto-refreshes an expired access token via the refresh
+  // token. It returns null only when the session is truly dead — expired
+  // refresh token, revoked session, or tampered JWT.
   const { data: { user } } = await supabase.auth.getUser()
   const pathname = request.nextUrl.pathname
 
-  // Unauthenticated: protect /dashboard and /onboarding
+  // No active session: protect /dashboard and /onboarding → force login.
   if (!user) {
     if (pathname.startsWith("/dashboard") || pathname === "/onboarding") {
+      const staleCookies = request.cookies
+        .getAll()
+        .filter((c) => c.name.startsWith("sb-"))
+
       const url = request.nextUrl.clone()
-      url.pathname = "/"
-      return NextResponse.redirect(url)
+      url.pathname = "/login"
+      url.search = ""
+      // Stale sb-* cookies mean they HAD a session that is no longer active
+      // (expired/revoked) — tell them why they're being asked to sign in.
+      if (staleCookies.length > 0) url.searchParams.set("error", "session_expired")
+
+      const redirect = NextResponse.redirect(url)
+      // Clear the dead session cookies so the browser starts clean.
+      staleCookies.forEach((c) => redirect.cookies.delete(c.name))
+      return redirect
     }
     return supabaseResponse
   }

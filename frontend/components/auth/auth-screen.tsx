@@ -1,8 +1,8 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { ArrowRight, Eye, EyeOff, Github, Loader2, Mail, Lock, User, AlertCircle } from "lucide-react"
 import { Logo } from "@/components/logo"
 import { RotatingWords } from "@/components/animated-text"
@@ -23,14 +23,29 @@ const COMPANIES = [
 // Toggle via NEXT_PUBLIC_DEMO_MODE=true in the environment.
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true"
 
+// Messages for ?error= codes set by middleware / auth routes.
+const URL_ERRORS: Record<string, string> = {
+  session_expired: "Your session has expired — please sign in again.",
+  confirm_expired: "That confirmation link is invalid or has expired. Try signing in — if that fails, sign up again to get a fresh link.",
+  confirm:         "Invalid confirmation link.",
+  auth:            "Authentication failed — please sign in.",
+}
+
 export function AuthScreen() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
 
   const [mode, setMode]               = useState<"login" | "signup">("login")
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading]         = useState(false)
   const [error, setError]             = useState<string | null>(null)
+
+  // Surface middleware/auth-route errors (e.g. expired session) on arrival.
+  useEffect(() => {
+    const code = searchParams.get("error")
+    if (code && URL_ERRORS[code]) setError(URL_ERRORS[code])
+  }, [searchParams])
 
   const [name,     setName]     = useState("")
   const [email,    setEmail]    = useState("")
