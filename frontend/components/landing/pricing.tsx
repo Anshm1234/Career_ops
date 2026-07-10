@@ -4,13 +4,14 @@ const FREE_FEATURES = [
   "6,100+ jobs indexed from Greenhouse, Lever & Ashby",
   "AI resume parsing (one Gemini call per upload)",
   "TOPSIS ranking across 5 dimensions",
+  "Resume tailoring per job description (3/day)",
   "Application tracker",
 ]
 
 const PREMIUM_HINTS = [
   "Live scraping from additional sources",
   "Internshala + more portals via Apify",
-  "Resume tailoring per job description",
+  "Unlimited resume tailoring",
   "Priority re-ranking on profile update",
 ]
 

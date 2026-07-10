@@ -19,8 +19,7 @@ const NAV = [
 ]
 
 const COMING_SOON = [
-  { label: "Resume tailoring", icon: Wand2 },
-  { label: "Auto-apply",       icon: Send  },
+  { label: "Auto-apply", icon: Send },
 ]
 
 export function AppSidebar() {
@@ -89,6 +88,25 @@ export function AppSidebar() {
             </Link>
           )
         })}
+
+        {/* Tools — live features launched from a job match */}
+        <p className="mb-1 mt-5 px-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground/40">
+          Tools
+        </p>
+        <Link
+          href="/dashboard/jobs"
+          title="Open a job match and press Tailor"
+          className="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/50 hover:text-foreground"
+        >
+          <Wand2 className="size-4 shrink-0" />
+          Resume tailoring
+          <span className="ml-auto rounded-full border border-border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest text-muted-foreground/50 group-hover:hidden">
+            live
+          </span>
+          <span className="ml-auto hidden whitespace-nowrap rounded-full border border-border px-1.5 py-0.5 font-mono text-[9px] tracking-widest text-foreground/70 group-hover:inline">
+            select a job →
+          </span>
+        </Link>
 
         {/* Coming soon */}
         <p className="mb-1 mt-5 px-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground/40">
