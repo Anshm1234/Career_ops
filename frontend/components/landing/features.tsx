@@ -226,25 +226,26 @@ function CardTracker() {
   )
 }
 
-/* ─── Card 5: resume tailoring (coming soon) ─────────────────────────────── */
+/* ─── Card 5: resume tailoring (live — hover reveals how to use it) ───────── */
 
 function CardTailoring() {
   return (
-    <CardShell delay={120} className="col-span-3 relative overflow-hidden">
+    <CardShell delay={120} className="col-span-3 group relative overflow-hidden">
       <div className="flex flex-1 flex-col p-6 gap-4">
-        {/* Blurred mockup content */}
+        {/* Mockup content — un-blurs on hover */}
         <div className="relative rounded-xl border border-border bg-background/60 p-4 select-none">
-          <div className="blur-sm pointer-events-none space-y-2">
+          <div className="blur-sm pointer-events-none space-y-2 transition-all duration-300 group-hover:blur-none group-hover:opacity-40">
             <div className="h-2.5 w-3/4 rounded bg-foreground/10" />
             <div className="h-2.5 w-full rounded bg-foreground/10" />
             <div className="h-2.5 w-2/3 rounded bg-foreground/10" />
             <div className="mt-3 h-2.5 w-full rounded bg-foreground/10" />
             <div className="h-2.5 w-4/5 rounded bg-foreground/10" />
           </div>
-          {/* Lock overlay */}
+          {/* Hover-responsive pill: "tailor resume" → "select a job" */}
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-xl">
-            <div className="rounded-full border border-border bg-background px-4 py-1.5 font-mono text-xs text-muted-foreground">
-              coming soon
+            <div className="rounded-full border border-border bg-background px-4 py-1.5 font-mono text-xs text-muted-foreground transition-colors duration-300 group-hover:border-foreground/30 group-hover:text-foreground">
+              <span className="group-hover:hidden">tailor resume</span>
+              <span className="hidden group-hover:inline">select a job →</span>
             </div>
           </div>
         </div>
@@ -257,8 +258,8 @@ function CardTailoring() {
                 Rewrites your bullets to align with a target job — before you apply.
               </p>
             </div>
-            <span className="shrink-0 rounded-full border border-dashed border-border px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground/50">
-              Planned
+            <span className="shrink-0 rounded-full border border-border px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-foreground/60">
+              Live
             </span>
           </div>
         </div>

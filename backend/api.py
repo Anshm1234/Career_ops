@@ -787,14 +787,42 @@ WHAT YOU MUST CHANGE (do all of these)
    JD-relevant responsibility. Rephrase to mirror JD language where it fits honestly.
 
 ═══════════════════════════════════════════
-SINGLE-PAGE & ATS RULES (mandatory)
+KEYWORD PLACEMENT RULES (mandatory — ATS scanners match exact strings)
 ═══════════════════════════════════════════
-- The final resume MUST fit on ONE A4 page when compiled with pdflatex.
-  To achieve this:
-  * Reduce \\vspace values if needed (use 2pt-4pt between sections, not 8pt-12pt).
+Step 1 — Before writing anything, extract the 8-12 most important keywords/phrases from the JD:
+  the job title, must-have skills, tools/frameworks, and domain terms. Keep the JD's EXACT
+  spelling and casing ("PostgreSQL" not "Postgres", "CI/CD" not "ci-cd").
+Step 2 — Place them at these EXACT lines of the resume (only where honest per the
+  anti-fabrication rules — a keyword the candidate cannot claim goes in gaps, never in the resume):
+  * SUMMARY, first sentence: the JD job title (or nearest honest equivalent) + 2 core JD skills.
+  * SUMMARY overall: 3-5 exact JD keywords total.
+  * SKILLS section: the FIRST skill in each group must be a JD keyword whenever the candidate
+    has one in that group.
+  * FIRST project, FIRST bullet: at least 2 exact JD keywords.
+  * Each remaining project's first bullet: at least 1 exact JD keyword where honest.
+  * Each experience role's FIRST bullet (if experience exists): at least 1 exact JD keyword.
+Step 3 — Verify: every extracted keyword the candidate can honestly claim MUST appear at least
+  once somewhere in the final resume. Keywords they cannot claim MUST appear in the gaps list.
+- NO keyword stuffing: each keyword must sit inside a sentence that is true of the base resume.
+  Never append bare keyword lists or invisible/white text.
+
+═══════════════════════════════════════════
+SINGLE-PAGE RULE (hard requirement — overflow = failure)
+═══════════════════════════════════════════
+- The final resume MUST fit on EXACTLY ONE A4 page when compiled with pdflatex. This is a hard
+  constraint: a two-page output is a failed tailoring, no matter how good the content is.
+  Enforce it in this order:
+  * Reduce \\vspace values (use 2pt-4pt between sections, not 8pt-12pt).
   * Limit each project/role to 2-3 tight bullets maximum.
-  * Trim any bullet that is verbose — keep bullets to one line where possible.
-  * If the base resume is already dense, cut the least-relevant project entirely rather than overflow.
+  * Keep every bullet to ONE physical line — if a bullet would wrap past ~1 line, shorten it.
+  * Cap the summary at 3 sentences and the skills section at the base resume's line count.
+  * If still too dense, DELETE the least JD-relevant project entirely rather than overflow.
+- After drafting, mentally estimate the page: header (~4 lines) + summary (~3) + education (~3)
+  + skills (~4) + projects/experience. If the estimate exceeds ~48 lines, cut content NOW.
+
+═══════════════════════════════════════════
+ATS RULES (mandatory)
+═══════════════════════════════════════════
 - ATS-FRIENDLY: use only plain text in bullets — no tables, no text boxes, no columns.
   Hyperlinks are fine. Section headings must be plain text.
 - Keep the LaTeX structurally valid and compilable.
@@ -824,6 +852,10 @@ _TAILOR_USER_TEMPLATE = """\
 === END JOB DESCRIPTION ===
 
 Produce the tailored single-page ATS-friendly resume and gaps list now.
+Remember the two hard constraints:
+1. Exact JD keywords placed at the required lines (summary sentence 1, first skill per group,
+   first bullet of the top project, first bullet of each role) — honest placements only.
+2. The compiled PDF must be EXACTLY ONE page — cut the least-relevant content if needed.
 """
 
 
