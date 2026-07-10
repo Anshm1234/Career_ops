@@ -80,6 +80,7 @@ _SALARY_RE = re.compile(
     (?P<low>[\d,]+(?:\.\d+)?)\s*(?P<low_k>[klKL])?   # e.g. 120,000 or 12L or 12k
     (?:                                                 # optional range
         \s*[-–to]+\s*
+        (?:\$|£|€|₹)?\s*                                # "$120k - $150k" repeats the symbol
         (?P<high>[\d,]+(?:\.\d+)?)\s*(?P<high_k>[klKL])?
     )?
     \s*
@@ -160,7 +161,9 @@ _HARDCODED_PATTERNS = [
     (re.compile(r"\$\s*(\d{1,3}(?:,\d{3})+|\d{4,})\s*(?:k)?\s*[-–—to]+\s*\$?\s*(\d{1,3}(?:,\d{3})+|\d{4,})\s*(?:k)?", re.I), "usd_range"),
     (re.compile(r"\$\s*(\d{1,3}(?:,\d{3})+|\d{4,})\s*(?:k)?", re.I), "usd_single"),
     # INR/RS: "₹8,00,000", "Rs 12 LPA", "INR 15,00,000"
-    (re.compile(r"(?:₹|rs\.?|inr)\s*(\d{1,3}(?:[,\d]*\d)?(?:\.\d+)?)\s*[-–to]*\s*(?:₹|rs\.?|inr)?\s*(\d{1,3}(?:[,\d]*\d)?(?:\.\d+)?)?", re.I), "inr"),
+    # (?![klKL]) — don't match "₹18L"/"₹12k" here; the suffix-aware general
+    # parser handles those. Without it "₹18L - ₹25L" collapsed to (18L, 18L).
+    (re.compile(r"(?:₹|rs\.?|inr)\s*(\d{1,3}(?:[,\d]*\d)?(?:\.\d+)?)(?![klKL])\s*[-–to]*\s*(?:₹|rs\.?|inr)?\s*(\d{1,3}(?:[,\d]*\d)?(?:\.\d+)?)?(?![klKL])", re.I), "inr"),
     # GBP: "£60,000", "GBP 60000"
     (re.compile(r"(?:£|gbp)\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)[kK]?\s*[-–to]*\s*(?:£|gbp)?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)?[kK]?", re.I), "gbp"),
     # EUR: "€80,000", "EUR 80000"
@@ -205,8 +208,10 @@ def _parse_hardcoded(text: str) -> tuple[float | None, float | None]:
                     if high < 10_000: high *= 1000
                 return low * _FX["usd"], high * _FX["usd"]
             elif kind == "inr":
-                # Already INR — sanity check it looks like annual salary
-                if low < 10_000:   # probably in lakhs
+                # Small bare numbers like "Rs 12" usually mean lakhs, but
+                # comma-grouped amounts ("₹5,000") are literal rupees —
+                # never scale those (a ₹5,000 voucher is not a ₹50Cr salary).
+                if low < 10_000 and "," not in m.group(0):
                     return low * 100_000, high * 100_000
                 return low, high
             elif kind == "gbp":

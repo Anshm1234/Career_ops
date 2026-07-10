@@ -212,7 +212,7 @@ def _score_seniority(job: dict, profile: dict) -> float:
     1.0  — candidate meets or exceeds requirement
     0.7  — candidate is within 1 year of requirement
     0.5  — job mentions no experience requirement (can't judge)
-    0.3  — candidate is 1-2 years short but has strong project evidence
+    0.4 / 0.2 — candidate is 1-2 years short (0.4 with 2+ projects as evidence)
     0.0  — candidate is significantly underqualified
     """
     exp_years = profile.get("total_experience_years") or 0
@@ -220,8 +220,11 @@ def _score_seniority(job: dict, profile: dict) -> float:
 
     # Extract required years from patterns like "5+ years", "3-5 years experience"
     patterns = [
-        r"(\d+)\+?\s*years?\s+(?:of\s+)?(?:experience|exp)",
+        # Range pattern FIRST: "3-5 years" must capture the lower bound (3).
+        # If "N+ years" ran first it would match the "5 years" tail and
+        # wrongly require the upper bound.
         r"(\d+)\s*[-–]\s*\d+\s*years?\s+(?:of\s+)?(?:experience|exp)",
+        r"(\d+)\+?\s*years?\s+(?:of\s+)?(?:experience|exp)",
         r"minimum\s+(\d+)\s*years?",
         r"at\s+least\s+(\d+)\s*years?",
     ]
