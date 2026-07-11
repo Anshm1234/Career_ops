@@ -1,16 +1,46 @@
-# Career Ops
+<div align="center">
 
-**AI job-discovery agent — drop your resume, get ranked job matches from 50+ company career portals, and tailor your resume to any of them.**
+# ⚡ Career Ops
 
-[![Daily job scrape](https://github.com/Anshm1234/Career_ops/actions/workflows/daily-scrape.yml/badge.svg)](https://github.com/Anshm1234/Career_ops/actions/workflows/daily-scrape.yml)
+**Drop your resume → get ranked matches from 50+ company career portals → tailor your resume to any of them.**
 
-🌐 **Live:** [career-ops-frontend.vercel.app](https://career-ops-frontend.vercel.app) · Backend: [Render](https://career-ops-vo9j.onrender.com/health)
+<p>
+  <a href="https://github.com/Anshm1234/Career_ops/actions/workflows/daily-scrape.yml"><img src="https://github.com/Anshm1234/Career_ops/actions/workflows/daily-scrape.yml/badge.svg" alt="Daily job scrape"></a>
+</p>
+
+<p>
+  <img src="https://img.shields.io/badge/Python_3.11-3776AB?logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI">
+  <img src="https://img.shields.io/badge/Next.js_16-000000?logo=nextdotjs&logoColor=white" alt="Next.js">
+  <img src="https://img.shields.io/badge/Supabase-3FCF8E?logo=supabase&logoColor=white" alt="Supabase">
+  <img src="https://img.shields.io/badge/Gemini_2.5-4285F4?logo=googlegemini&logoColor=white" alt="Gemini">
+  <img src="https://img.shields.io/badge/Render-46E3B7?logo=render&logoColor=black" alt="Render">
+  <img src="https://img.shields.io/badge/Vercel-000000?logo=vercel&logoColor=white" alt="Vercel">
+</p>
+
+🌐 **[Live demo](https://career-ops-frontend.vercel.app)** · 🩺 [Backend health](https://career-ops-vo9j.onrender.com/health) · 🐛 [Report a bug](https://github.com/Anshm1234/Career_ops/issues)
+
+</div>
+
+```mermaid
+flowchart LR
+    A["📄 Upload resume"] --> B["🤖 ONE Gemini call<br/>profile + base LaTeX"]
+    B --> C["🔍 Filter ~6,100 jobs<br/>keywords · role · location · salary"]
+    C --> D["📊 TOPSIS rank<br/>5 explainable dimensions"]
+    D --> E["🏆 Top 100 matches"]
+    E --> F["✂️ Job-tailored<br/>LaTeX → PDF resume"]
+```
+
+<div align="center">
+
+| 🗄️ **6,100+** jobs daily | 🏢 **54** companies | 📐 **5** ranking dimensions | 🤖 **1** Gemini call / upload | 🏆 top **100** matches |
+|:---:|:---:|:---:|:---:|:---:|
+
+</div>
 
 ---
 
-## Overview
-
-Career Ops scrapes ~6,100 jobs daily from 54 companies (Greenhouse, Lever, Ashby), parses your resume with **exactly one** Gemini call, filters and ranks every job with a **deterministic TOPSIS algorithm** (explainable scores, not a black-box LLM), and generates a job-specific tailored resume as compiled LaTeX → PDF.
+## ✨ Features
 
 | ✅ Works today | 🔜 Coming soon |
 |---|---|
@@ -21,20 +51,42 @@ Career Ops scrapes ~6,100 jobs daily from 54 companies (Greenhouse, Lever, Ashby
 | Application tracker (saved → applied → interview → offer) | |
 | Auth (email + OAuth), 6-step onboarding, rate limiting | |
 
-## Tech stack
+> [!IMPORTANT]
+> **Exactly one Gemini call per resume upload** is a hard architectural rule. Ranking is 100% deterministic TOPSIS — explainable scores, zero LLM calls per job.
 
-| Layer | Technology | Hosted on |
-|---|---|---|
-| Frontend | Next.js 16 · Tailwind · shadcn/ui · Three.js | Vercel |
-| Backend | FastAPI (Python 3.11) · Docker | Render |
-| Database + Auth | Supabase (PostgreSQL, JWT/OAuth) | Supabase cloud |
-| LLM | Google `gemini-2.5-flash-lite` | Google AI |
-| PDF compile | pdflatex via texlive.net | external |
-| Scraper cron | GitHub Actions (daily 02:00 IST) | GitHub |
+<details>
+<summary>📑 <b>Table of contents</b></summary>
+
+- [🏗️ System architecture](#️-system-architecture)
+- [🔄 Upload → match pipeline](#-upload--match-pipeline)
+- [🎯 How ranking works (TOPSIS)](#-how-ranking-works-topsis)
+- [✂️ Resume tailoring](#️-resume-tailoring)
+- [🔐 Auth + onboarding](#-auth--onboarding)
+- [🗃️ Data model](#️-data-model)
+- [🔁 Daily data refresh](#-daily-data-refresh)
+- [🚀 Deployment](#-deployment)
+- [🧭 A user's first session](#-a-users-first-session)
+- [🧠 The build story](#-the-build-story)
+- [📁 Repository structure](#-repository-structure)
+- [🔌 Backend endpoints](#-backend-endpoints)
+- [💻 Local development](#-local-development)
+- [🔑 Environment variables](#-environment-variables)
+- [🧪 Testing](#-testing)
+- [🗺️ Roadmap](#️-roadmap)
+
+</details>
+
+<!-- 📸 SCREENSHOTS — uncomment once images exist at frontend/public/screenshots/
+## 📸 Screenshots
+<div align="center">
+  <img src="frontend/public/screenshots/dashboard-jobs.png" width="45%" alt="Ranked matches">
+  <img src="frontend/public/screenshots/job-card.png" width="45%" alt="Job detail with TOPSIS breakdown">
+</div>
+-->
 
 ---
 
-## System architecture
+## 🏗️ System architecture
 
 ```mermaid
 flowchart LR
@@ -82,9 +134,11 @@ flowchart LR
     SCR -- "upsert ~6,100 jobs" --> DB
 ```
 
-JSON requests go through a Vercel rewrite proxy (hides the backend origin); **file uploads bypass it** and hit Render directly because Vercel's edge mangles multipart bodies. The backend is the only writer to `jobs`/`user_matches` (service role); the browser talks to `profiles`/`applications` directly under Supabase RLS.
+JSON rides a Vercel rewrite proxy (hides the backend origin); **uploads bypass it** — Vercel's edge mangles multipart bodies. The backend is the only writer to `jobs`/`user_matches` (service role); the browser touches `profiles`/`applications` directly under Supabase **RLS**.
 
-## Resume upload → match pipeline
+---
+
+## 🔄 Upload → match pipeline
 
 ```mermaid
 sequenceDiagram
@@ -117,9 +171,36 @@ sequenceDiagram
     B-->>F: ranked jobs with dimension scores
 ```
 
-The whole pipeline is **memory-safe by construction**: jobs stream through in 250-row pages, descriptions are truncated before filtering and dropped after — Render's 512 MB instance never holds the full corpus.
+**Memory-safe by construction** — jobs stream in 250-row pages, descriptions are truncated before filtering and dropped after. Render's 512 MB instance never holds the full corpus:
 
-## How ranking works (TOPSIS)
+```mermaid
+flowchart TD
+    A["🗄️ ~6,100 active jobs<br/>(streamed 250/page)"] --> B{"1️⃣ keyword score<br/>title hits ×2"}
+    B -->|pass| C{"2️⃣ role match<br/>vs preferred roles"}
+    B -.->|drop| X1["✖️"]
+    C -->|pass| D{"3️⃣ location match<br/>aliases + remote rules"}
+    C -.->|drop| X2["✖️"]
+    D -->|pass| E{"4️⃣ salary<br/>in user range"}
+    D -.->|drop| X3["✖️"]
+    E -->|pass| M["✅ matched set<br/>(hundreds)"]
+    E -.->|drop| X4["✖️"]
+    M --> R["📊 TOPSIS rank"]
+    R --> T["🏆 top 100 saved<br/>with per-dimension scores"]
+```
+
+---
+
+## 🎯 How ranking works (TOPSIS)
+
+```mermaid
+pie showData
+    title Dimension weights (%)
+    "Skill match" : 30
+    "Salary fit" : 30
+    "Role fit" : 20
+    "Location" : 10
+    "Seniority" : 10
+```
 
 ```mermaid
 flowchart LR
@@ -133,9 +214,11 @@ flowchart LR
     T --> R["rank · top 100 saved<br/>with per-dimension scores"]
 ```
 
-Every match shows its five dimension scores in the UI ("Why this is a match") — ranking is fully explainable and reproducible, with **zero LLM calls per job**. Weights are user-tunable and re-ranking is instant.
+Every match shows its five scores in the UI ("Why this is a match") — fully explainable, reproducible, **zero LLM calls per job**. Weights are user-tunable; re-ranking is instant.
 
-## Resume tailoring
+---
+
+## ✂️ Resume tailoring
 
 ```mermaid
 sequenceDiagram
@@ -166,9 +249,12 @@ sequenceDiagram
     end
 ```
 
-The prompt enforces **anti-fabrication** (nothing not in the base resume; missing requirements go to a "gaps" list instead), exact JD keyword placement at ATS-scannable positions, and a hard single-page rule.
+> [!NOTE]
+> **Anti-fabrication is enforced in the prompt**: nothing that isn't in the base resume gets added. Missing JD requirements go to an honest *gaps list* instead of the resume.
 
-## Auth + onboarding
+---
+
+## 🔐 Auth + onboarding
 
 ```mermaid
 flowchart TD
@@ -187,9 +273,11 @@ flowchart TD
     MW -. "dead session on /dashboard/* →<br/>clear sb-* cookies,<br/>/login?error=session_expired" .-> L
 ```
 
-Backend JWT verification pins **ES256 via JWKS** (24 h key cache) with an HS256 fallback for legacy projects — the algorithm is never chosen by the token header.
+Backend JWT verification pins **ES256 via JWKS** (24 h key cache) with an HS256 fallback — the algorithm is never chosen by the token header.
 
-## Data model
+---
+
+## 🗃️ Data model
 
 ```mermaid
 erDiagram
@@ -240,9 +328,11 @@ erDiagram
     }
 ```
 
-User preferences live in a single `profile_data` **JSONB blob** (schema-flexible, one row per user) rather than columns. `user_matches → jobs` is merged with two queries in Python because PostgREST's embedded join needs an FK in its schema cache. Browser-accessed tables (`profiles`, `applications`) rely on Supabase **RLS policies**; `jobs`/`user_matches` are backend-only via service role.
+Preferences live in one `profile_data` **JSONB blob** (schema-flexible, one row per user). `user_matches → jobs` is a two-query Python merge (PostgREST embedded joins need an FK in its schema cache). Browser-facing tables (`profiles`, `applications`) sit behind **RLS**; `jobs`/`user_matches` are backend-only.
 
-## Daily data refresh
+---
+
+## 🔁 Daily data refresh
 
 ```mermaid
 flowchart TD
@@ -256,7 +346,9 @@ flowchart TD
     X["Internshala / Naukri / Workday:<br/>Playwright scrapers exist in tools/<br/>but NOT in pipeline (Render OOM —<br/>planned via Apify)"] -.-> P
 ```
 
-## Deployment
+---
+
+## 🚀 Deployment
 
 ```mermaid
 flowchart LR
@@ -268,7 +360,54 @@ flowchart LR
 
 ---
 
-## Repository structure
+## 🧭 A user's first session
+
+```mermaid
+journey
+    title From signup to tracked application
+    section Onboard
+      Sign up (OAuth or email): 5: User
+      6-step wizard: 4: User
+      Upload resume: 5: User
+    section Match
+      Pipeline runs (~30s): 3: System
+      Browse top 100 ranked jobs: 5: User
+      Open "Why this is a match": 5: User
+    section Apply
+      Tailor resume for a job: 5: User, Gemini
+      Download compiled PDF: 5: User
+      Track it (saved → applied): 4: User
+```
+
+---
+
+## 🧠 The build story
+
+```mermaid
+timeline
+    title Engineering journey
+    v0 — Agentic : Gemini orchestrator scored jobs one-by-one : latency + free-tier quota death
+    The pivot : deterministic TOPSIS ranking : "one Gemini call per upload" becomes a hard rule
+    OOM fight : Render 512 MB kept dying mid-pipeline : streaming 250-row pages + 2 KB truncation
+    Ship the UX : landing page · 6-step onboarding : sidebar shell · job detail · tracker
+    Tailoring : resume → base LaTeX at upload : per-job JD alignment → texlive.net PDF
+    Hardening : 4 real money-parsing bugs fixed : rate limits · RLS · token-hash email confirm
+```
+
+| 💥 Problem | 🛠️ Decision |
+|---|---|
+| Per-job LLM scoring = unusable latency + quota death at ~6,100 jobs | **TOPSIS**: deterministic, ms-fast, 5 explainable dimensions, one Gemini call per upload |
+| Full jobs corpus OOM-killed Render's 512 MB instance | **Streaming filter**: 250-row pages, truncate → filter → drop; flat peak memory |
+| Vercel edge mangles multipart bodies | JSON via `/api/*` **rewrite proxy**; uploads go **direct to Render** with CORS |
+| PKCE `?code=` breaks when email opens in a different browser | **`verifyOtp(token_hash)`** confirm route — self-contained, works from any mail client |
+| Free-text salaries are hostile ("₹5,000 joining voucher" read as ₹50 Cr) | Test pass caught **4 real parsing bugs**; all fixed with regression checks |
+
+---
+
+## 📁 Repository structure
+
+<details>
+<summary><b>Expand the file-by-file breakdown</b></summary>
 
 ```
 career-ops/
@@ -310,12 +449,16 @@ career-ops/
     └── utils/supabase/                  # server client + middleware session logic
 ```
 
-## Backend endpoints
+</details>
+
+---
+
+## 🔌 Backend endpoints
 
 | Endpoint | Auth | Purpose |
 |---|---|---|
 | `GET /health` | — | liveness check |
-| `POST /resume/upload` | JWT | parse resume (1 Gemini call), kick off match pipeline · **3/hr** |
+| `POST /resume/upload` | JWT | parse resume (1 Gemini call), kick off pipeline · **3/hr** |
 | `GET /jobs/status/{uid}` | JWT | pipeline status: `scraping → filtering → ready` |
 | `GET /jobs/search/{uid}` | JWT | ranked matches (two-query merge) |
 | `GET /profile/{uid}` | JWT | parsed profile |
@@ -325,15 +468,10 @@ career-ops/
 
 ---
 
-## Engineering decisions
+## 💻 Local development
 
-- **TOPSIS instead of per-job LLM scoring.** An early agentic-orchestrator design scored jobs with LLM calls — at ~6,100 jobs/user that meant unusable latency and instant free-tier quota death. TOPSIS ranks everything in milliseconds, is deterministic, and each score decomposes into 5 explainable dimensions. Exactly **one** Gemini call per upload is a hard rule.
-- **Streaming filter vs Render's 512 MB.** Loading the full jobs corpus OOM-killed the free instance. Fix: paginate 250 rows at a time, truncate descriptions to 2 KB before filtering, drop them after — peak memory stays flat regardless of corpus size. Same reason live Playwright scraping (Internshala) is disabled in production.
-- **Proxy for JSON, direct for uploads.** Vercel's edge rewrites mangle multipart bodies, so JSON goes through the `/api/*` proxy (hides backend origin) while uploads hit Render directly with CORS.
-- **Token-hash email confirmation.** PKCE `?code=` exchange breaks when the confirmation link opens in a different browser than the signup (no code-verifier cookie). A `verifyOtp(token_hash)` route is self-contained — new users land signed-in on onboarding from any mail client.
-- **A test pass caught 4 real matching bugs**: "3–5 years" seniority requiring the upper bound; `₹18L–₹25L` collapsing to `(18L, 18L)`; `$120k–$150k` losing its high end; and `₹5,000` (a joining voucher) being read as a ₹50 Cr salary. All fixed with regression checks — parsing money out of free text is genuinely hostile territory.
-
-## Local development
+<details>
+<summary><b>Setup, run, and scrape commands</b></summary>
 
 ```bash
 git clone https://github.com/Anshm1234/Career_ops.git && cd Career_ops
@@ -366,7 +504,14 @@ python scrape_all.py        # full scrape → Supabase
 python test_scrapers.py     # one company per ATS source
 ```
 
-## Environment variables
+</details>
+
+---
+
+## 🔑 Environment variables
+
+<details>
+<summary><b>All required variables (names only — values never committed)</b></summary>
 
 | Variable | Service | Purpose |
 |---|---|---|
@@ -380,17 +525,24 @@ python test_scrapers.py     # one company per ATS source
 | `BACKEND_URL` | frontend (build) | rewrite proxy target |
 | `NEXT_PUBLIC_BACKEND_URL` | frontend (build) | direct upload target |
 
-> `NEXT_PUBLIC_*` and `BACKEND_URL` bake in at **build time** — redeploy with cleared cache after changing.
+</details>
 
-## Testing
+> [!WARNING]
+> `NEXT_PUBLIC_*` and `BACKEND_URL` bake in at **build time** — redeploy with cleared cache after changing them.
 
-Honest status: **no full pytest suite yet.** What exists:
+---
+
+## 🧪 Testing
+
+Honest status: **no full pytest suite yet.**
 
 - `backend/test_scrapers.py` — live smoke test (one company per ATS source)
-- The salary/seniority fixes above ship with an 8-case verification script (see commit `394a4c6`); converting it into a proper pytest suite is the top roadmap item
+- The salary/seniority fixes ship with an 8-case verification script (commit `394a4c6`); converting it into a proper pytest suite is the top roadmap item
 - CI: the daily-scrape workflow doubles as an integration check of scrapers + DB writes
 
-## Roadmap
+---
+
+## 🗺️ Roadmap
 
 - [ ] pytest suite for `salary.py`, `topsis.py`, `job_filter.py`
 - [ ] Auto-apply engine (onboarding already collects the required fields)
@@ -398,11 +550,12 @@ Honest status: **no full pytest suite yet.** What exists:
 - [ ] Supabase auth hardening: CAPTCHA, sign-in rate limits
 - [ ] Custom domain
 
-## Author
-
-**Ansh Madaan** — final-year CS, Thapar Institute
-GitHub: [@Anshm1234](https://github.com/Anshm1234)
-
 ---
 
-*Built with FastAPI, Next.js, Supabase, and one very carefully rationed Gemini call.*
+<div align="center">
+
+**Ansh Madaan** — final-year CS, Thapar Institute · [@Anshm1234](https://github.com/Anshm1234)
+
+<sub>*Built with FastAPI, Next.js, Supabase, and one very carefully rationed Gemini call.*</sub>
+
+</div>
